@@ -65,7 +65,7 @@ th { color: var(--ink-2); font-weight: 500; }
 td.num, th.num { text-align: right; font-family: "IBM Plex Mono", monospace; }
 .tickers { font-family: "IBM Plex Mono", monospace; }
 svg text { fill: var(--ink-2); font-family: "IBM Plex Mono", monospace; font-size: 10px; }
-#chart-tooltip {
+#chart-tooltip, .tooltip-box {
   position: absolute; display: none; background: var(--bg-panel); border: 1px solid var(--border);
   border-radius: 6px; padding: 4px 8px; font-size: 0.8rem; font-family: "IBM Plex Mono", monospace;
   pointer-events: none; color: var(--ink-1);
@@ -96,6 +96,15 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
       <svg id="chart" viewBox="0 0 1040 300" width="100%" style="overflow:visible;"></svg>
       <div id="cagr-label" style="position:absolute; top:4px; right:6px; font-size:0.85rem; font-weight:600; color:var(--accent); font-family:'IBM Plex Mono',monospace;"></div>
       <div id="chart-tooltip"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin:0 0 4px;">Annual returns</h2>
+    <p class="sub" style="margin:0 0 8px;">Each calendar year's own return, from the selected start year above - the current year is partial (YTD), not annualized.</p>
+    <div style="position:relative;">
+      <svg id="returns-chart" viewBox="0 0 1040 260" width="100%" style="overflow:visible;"></svg>
+      <div id="returns-tooltip" class="tooltip-box"></div>
     </div>
   </div>
 
@@ -220,9 +229,70 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
     });
   }
 
+  function renderReturns(startYear) {
+    const svg2 = document.getElementById("returns-chart");
+    const tip2 = document.getElementById("returns-tooltip");
+    const W2 = 1040, H2 = 260, PAD_L2 = 50, PAD_R2 = 10, PAD_T2 = 14, PAD_B2 = 24;
+    const todayYear = new Date().getFullYear();
+    const maxYear = new Date(EQUITY_RAW[EQUITY_RAW.length - 1].t).getFullYear();
+
+    const bars = [];
+    for (let y = startYear; y <= maxYear; y++) {
+      const pts = EQUITY_RAW.filter(d => new Date(d.t).getFullYear() === y);
+      if (pts.length < 2) continue;
+      bars.push({ year: y, ret: pts[pts.length - 1].v / pts[0].v - 1, partial: y === todayYear });
+    }
+    if (bars.length === 0) { svg2.innerHTML = ""; return; }
+
+    const rets = bars.map(b => b.ret * 100);
+    const yTicks = niceTicks(Math.min(0, ...rets), Math.max(0, ...rets), 5);
+    const minY = yTicks[0], maxY = yTicks[yTicks.length - 1];
+    const yScale = v => H2 - PAD_B2 - (v - minY) / (maxY - minY) * (H2 - PAD_T2 - PAD_B2);
+    const slot = (W2 - PAD_L2 - PAD_R2) / bars.length;
+    const barW = slot * 0.55;
+
+    let gridSvg = "";
+    yTicks.forEach(v => {
+      const y = yScale(v);
+      gridSvg += `<line x1="${PAD_L2}" x2="${W2 - PAD_R2}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+      gridSvg += `<text x="4" y="${y + 3}">${v.toFixed(0)}%</text>`;
+    });
+
+    let barsSvg = "";
+    bars.forEach((b, i) => {
+      const x = PAD_L2 + i * slot + (slot - barW) / 2;
+      const yZero = yScale(0), yVal = yScale(b.ret * 100);
+      const top = Math.min(yZero, yVal), height = Math.max(1, Math.abs(yZero - yVal));
+      const color = b.ret >= 0 ? "var(--up)" : "var(--down)";
+      const opacity = b.partial ? 0.55 : 1;
+      barsSvg += `<rect data-i="${i}" x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${height.toFixed(1)}" fill="${color}" opacity="${opacity}"/>`;
+      const label = b.partial ? `${b.year} YTD` : String(b.year);
+      barsSvg += `<text x="${(x + barW / 2).toFixed(1)}" y="${H2 - 6}" text-anchor="middle">${label}</text>`;
+    });
+
+    svg2.innerHTML = gridSvg + barsSvg;
+    svg2.onmousemove = (e) => {
+      const rect = svg2.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) / rect.width * W2;
+      const i = Math.min(bars.length - 1, Math.max(0, Math.floor((mx - PAD_L2) / slot)));
+      const b = bars[i];
+      if (!b) { tip2.style.display = "none"; return; }
+      tip2.style.display = "block";
+      tip2.style.left = (e.clientX - rect.left + 12) + "px";
+      tip2.style.top = (e.clientY - rect.top - 10) + "px";
+      tip2.textContent = (b.partial ? `${b.year} YTD: ` : `${b.year}: `) + (b.ret * 100).toFixed(1) + "%";
+    };
+    svg2.onmouseleave = () => { tip2.style.display = "none"; };
+  }
+
+  function renderAll(startYear) {
+    render(startYear);
+    renderReturns(startYear);
+  }
+
   yearSelect.value = String(DEFAULT_START_YEAR);
-  yearSelect.addEventListener("change", () => render(parseInt(yearSelect.value, 10)));
-  render(DEFAULT_START_YEAR);
+  yearSelect.addEventListener("change", () => renderAll(parseInt(yearSelect.value, 10)));
+  renderAll(DEFAULT_START_YEAR);
 })();
 </script>
 </body>
