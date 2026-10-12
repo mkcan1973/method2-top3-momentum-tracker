@@ -101,7 +101,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
 
   <div class="panel">
     <h2 style="margin:0 0 4px;">Annual returns</h2>
-    <p class="sub" style="margin:0 0 8px;">Each calendar year's own return, from the selected start year above - the current year is partial (YTD), not annualized.</p>
+    <p class="sub" style="margin:0 0 8px;">Bars: each calendar year's own return. Line: cumulative CAGR from the selected start year through the end of that year. Current year is partial (YTD).</p>
     <div style="position:relative;">
       <svg id="returns-chart" viewBox="0 0 1040 260" width="100%" style="overflow:visible;"></svg>
       <div id="returns-tooltip" class="tooltip-box"></div>
@@ -158,6 +158,15 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
     return ticks;
   }
 
+  function yearTicks(minT, maxT) {
+    const ticks = [];
+    for (let y = new Date(minT).getFullYear(); y <= new Date(maxT).getFullYear(); y++) {
+      const t = new Date(y, 0, 1).getTime();
+      if (t >= minT && t <= maxT) ticks.push(t);
+    }
+    return ticks;
+  }
+
   function rebaseFactor(startYear) {
     const cutoff = new Date(startYear, 0, 1).getTime();
     const point = EQUITY_RAW.find(d => d.t >= cutoff) || EQUITY_RAW[0];
@@ -185,9 +194,13 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
       gridSvg += `<line x1="${PAD_L}" x2="${W - PAD_R}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
       gridSvg += `<text x="4" y="${y + 3}">${v.toFixed(0)}</text>`;
     });
-    quarterTicks(minX, maxX).forEach(t => {
+    const spanYears = (maxX - minX) / (1000 * 60 * 60 * 24 * 365.25);
+    const useYearly = spanYears > 3;
+    (useYearly ? yearTicks(minX, maxX) : quarterTicks(minX, maxX)).forEach(t => {
       const x = xScale(t);
-      const label = new Date(t).toLocaleString("en-US", { month: "short", year: "2-digit" });
+      const label = useYearly
+        ? String(new Date(t).getFullYear())
+        : new Date(t).toLocaleString("en-US", { month: "short", year: "2-digit" });
       gridSvg += `<text x="${x}" y="${H - 6}" text-anchor="middle">${label}</text>`;
     });
 
@@ -235,21 +248,27 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
     const W2 = 1040, H2 = 260, PAD_L2 = 50, PAD_R2 = 10, PAD_T2 = 14, PAD_B2 = 24;
     const todayYear = new Date().getFullYear();
     const maxYear = new Date(EQUITY_RAW[EQUITY_RAW.length - 1].t).getFullYear();
+    const startPoint = EQUITY_RAW.find(d => new Date(d.t).getFullYear() >= startYear) || EQUITY_RAW[0];
 
     const bars = [];
     for (let y = startYear; y <= maxYear; y++) {
       const pts = EQUITY_RAW.filter(d => new Date(d.t).getFullYear() === y);
       if (pts.length < 2) continue;
-      bars.push({ year: y, ret: pts[pts.length - 1].v / pts[0].v - 1, partial: y === todayYear });
+      const last = pts[pts.length - 1];
+      const yearsElapsed = (last.t - startPoint.t) / (1000 * 60 * 60 * 24 * 365.25);
+      const cumCagr = yearsElapsed > 0 ? Math.pow(last.v / startPoint.v, 1 / yearsElapsed) - 1 : 0;
+      bars.push({ year: y, ret: last.v / pts[0].v - 1, cumCagr, partial: y === todayYear });
     }
     if (bars.length === 0) { svg2.innerHTML = ""; return; }
 
     const rets = bars.map(b => b.ret * 100);
-    const yTicks = niceTicks(Math.min(0, ...rets), Math.max(0, ...rets), 5);
+    const cagrs = bars.map(b => b.cumCagr * 100);
+    const yTicks = niceTicks(Math.min(0, ...rets, ...cagrs), Math.max(0, ...rets, ...cagrs), 5);
     const minY = yTicks[0], maxY = yTicks[yTicks.length - 1];
     const yScale = v => H2 - PAD_B2 - (v - minY) / (maxY - minY) * (H2 - PAD_T2 - PAD_B2);
     const slot = (W2 - PAD_L2 - PAD_R2) / bars.length;
     const barW = slot * 0.55;
+    const xCenter = i => PAD_L2 + i * slot + slot / 2;
 
     let gridSvg = "";
     yTicks.forEach(v => {
@@ -270,7 +289,22 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
       barsSvg += `<text x="${(x + barW / 2).toFixed(1)}" y="${H2 - 6}" text-anchor="middle">${label}</text>`;
     });
 
-    svg2.innerHTML = gridSvg + barsSvg;
+    let cagrSvg = "";
+    let linePath = "";
+    bars.forEach((b, i) => {
+      const px = xCenter(i), py = yScale(b.cumCagr * 100);
+      linePath += (i === 0 ? "M" : "L") + px.toFixed(1) + "," + py.toFixed(1) + " ";
+      cagrSvg += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3" fill="var(--accent)"/>`;
+    });
+    cagrSvg = `<path d="${linePath}" fill="none" stroke="var(--accent)" stroke-width="2"/>` + cagrSvg;
+
+    const legendSvg =
+      `<rect x="${W2 - 230}" y="0" width="10" height="10" fill="var(--up)"/>` +
+      `<text x="${W2 - 215}" y="9">Year's own return</text>` +
+      `<line x1="${W2 - 230}" x2="${W2 - 220}" y1="20" y2="20" stroke="var(--accent)" stroke-width="2"/>` +
+      `<text x="${W2 - 215}" y="23">CAGR since ${startYear}</text>`;
+
+    svg2.innerHTML = gridSvg + barsSvg + cagrSvg + legendSvg;
     svg2.onmousemove = (e) => {
       const rect = svg2.getBoundingClientRect();
       const mx = (e.clientX - rect.left) / rect.width * W2;
@@ -280,7 +314,8 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
       tip2.style.display = "block";
       tip2.style.left = (e.clientX - rect.left + 12) + "px";
       tip2.style.top = (e.clientY - rect.top - 10) + "px";
-      tip2.textContent = (b.partial ? `${b.year} YTD: ` : `${b.year}: `) + (b.ret * 100).toFixed(1) + "%";
+      const yearLabel = b.partial ? `${b.year} YTD` : String(b.year);
+      tip2.innerHTML = `${yearLabel}<br>return: ${(b.ret * 100).toFixed(1)}%<br>CAGR since ${startYear}: ${(b.cumCagr * 100).toFixed(1)}%`;
     };
     svg2.onmouseleave = () => { tip2.style.display = "none"; };
   }
