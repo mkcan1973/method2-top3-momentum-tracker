@@ -5,9 +5,13 @@ from the existing, already point-in-time-corrected method2 backtest
 
 Not run by the GitHub Action - it depends on method1's local full-history
 price database, which never leaves this machine. Produces two seed CSVs
-(equity_history.csv, rebalance_log.csv) covering 2025-01 through the last
-completed backtest month; the live tracker appends to these going forward
-using its own independently fetched (non point-in-time) data.
+(equity_history.csv, rebalance_log.csv) covering the FULL backtest window
+(2010-01 onward - see fetch_sp500_membership_history.py's point-in-time
+S&P 500 membership cache) through the last completed backtest month;
+rebased to $100 at the earliest date. The tracker page lets viewers pick
+any later start year to rebase/slice client-side; the live tracker itself
+appends to these same two files going forward using its own independently
+fetched (non point-in-time) data.
 """
 
 import sys
@@ -19,14 +23,13 @@ sys.path.insert(0, r"C:\mark\scripts\method2")
 
 import top_n_momentum as tnm  # noqa: E402
 
-SEED_START = pd.Timestamp("2025-01-01")
+FIRST_MONTH = "2010-01"
 OUT_DIR = Path(__file__).parent
 
 
 def main():
-    result = tnm.run(n=3, lookback_months=6)
-    eq_df = result["equity_curve"]
-    eq_df = eq_df[eq_df["date"] >= SEED_START].reset_index(drop=True)
+    result = tnm.run(n=3, lookback_months=6, first_month=FIRST_MONTH)
+    eq_df = result["equity_curve"].reset_index(drop=True)
 
     base = eq_df["capital"].iloc[0]
     eq_df["value"] = eq_df["capital"] / base * 100.0
@@ -34,7 +37,6 @@ def main():
     print(f"Wrote equity_history.csv: {len(eq_df)} rows, {eq_df['date'].iloc[0].date()}..{eq_df['date'].iloc[-1].date()}")
 
     log_df = pd.read_csv(result["log_path"])
-    log_df = log_df[log_df["period"] >= "2025-01"].reset_index(drop=True)
 
     conn = tnm.data_db.connect()
     all_bars = tnm.data_db.load_bars(conn)

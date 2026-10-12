@@ -76,7 +76,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
 <body>
 <div class="wrap">
   <h1>Top-3 Momentum Tracker</h1>
-  <p class="sub">As of __AS_OF__ &middot; $100 rebased at 2025-01-02 &middot; monthly rebalance, equal-weight top 3 of the S&amp;P 500 by trailing 6-month return</p>
+  <p class="sub">As of __AS_OF__ &middot; monthly rebalance, equal-weight top 3 of the S&amp;P 500 by trailing 6-month return</p>
 
   <div class="panel">
     <h2>Recent activity</h2>
@@ -84,10 +84,17 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
   </div>
 
   <div class="panel">
-    <h2>Equity curve</h2>
-    <div style="position:relative;">
+    <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+      <h2 style="margin:0;">Equity curve</h2>
+      <label style="font-size:0.85rem; color:var(--ink-2);">Rebase $100 at start of
+        <select id="start-year" style="font-family:'IBM Plex Mono',monospace; font-size:0.85rem; padding:2px 4px;">
+          __YEAR_OPTIONS__
+        </select>
+      </label>
+    </div>
+    <div style="position:relative; margin-top:8px;">
       <svg id="chart" viewBox="0 0 1040 300" width="100%" style="overflow:visible;"></svg>
-      <div style="position:absolute; top:4px; right:6px; font-size:0.85rem; font-weight:600; color:var(--accent); font-family:'IBM Plex Mono',monospace;">__CAGR_LABEL__</div>
+      <div id="cagr-label" style="position:absolute; top:4px; right:6px; font-size:0.85rem; font-weight:600; color:var(--accent); font-family:'IBM Plex Mono',monospace;"></div>
       <div id="chart-tooltip"></div>
     </div>
   </div>
@@ -96,27 +103,28 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
     <h2>Monthly holdings</h2>
     <table>
       <thead><tr><th>Month</th><th>Rebalance date</th><th class="tickers">Holdings</th><th class="num">Value ($100 base)</th></tr></thead>
-      <tbody>__TABLE_ROWS__</tbody>
+      <tbody id="holdings-body">__TABLE_ROWS__</tbody>
     </table>
   </div>
 
   <footer>
-    Research/educational tracker only - not auto-traded, not investment advice. Holdings from 2025-01 through
+    Research/educational tracker only - not auto-traded, not investment advice. Holdings from 2010-01 through
     the method2 backtest's last completed month come from a point-in-time-corrected historical backtest
-    (C:\\mark\\scripts\\method2); everything after that is computed live, monthly, against the S&amp;P 500's
-    actual current constituent list. No transaction costs or taxes modeled. See the method2 project writeup
-    for the strategy's known limitations (no train/test split, recent performance concentrated in a handful
-    of semiconductor/AI-memory names).
+    (C:\\mark\\scripts\\method2, S&amp;P 500 membership reconstructed from Wikipedia back to 2010); everything
+    after that is computed live, monthly, against the S&amp;P 500's actual current constituent list. No
+    transaction costs or taxes modeled. See the method2 project writeup for the strategy's known limitations
+    (no train/test split, recent performance concentrated in a handful of semiconductor/AI-memory names).
   </footer>
 </div>
 <script>
-const EQUITY = __EQUITY_JSON__;
+const EQUITY_RAW = __EQUITY_JSON__;
+const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
 (function () {
   const svg = document.getElementById("chart");
   const tip = document.getElementById("chart-tooltip");
+  const cagrLabel = document.getElementById("cagr-label");
+  const yearSelect = document.getElementById("start-year");
   const W = 1040, H = 300, PAD_L = 50, PAD_R = 10, PAD_T = 14, PAD_B = 26;
-  const xs = EQUITY.map(d => d.t);
-  const ys = EQUITY.map(d => d.v);
 
   function niceTicks(dataMin, dataMax, targetCount) {
     const rough = (dataMax - dataMin) / targetCount || 1;
@@ -141,50 +149,80 @@ const EQUITY = __EQUITY_JSON__;
     return ticks;
   }
 
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  const yTicks = niceTicks(Math.min(...ys), Math.max(...ys), 5);
-  const minY = yTicks[0], maxY = yTicks[yTicks.length - 1];
-  const xScale = t => PAD_L + (t - minX) / (maxX - minX) * (W - PAD_L - PAD_R);
-  const yScale = v => H - PAD_B - (v - minY) / (maxY - minY) * (H - PAD_T - PAD_B);
+  function rebaseFactor(startYear) {
+    const cutoff = new Date(startYear, 0, 1).getTime();
+    const point = EQUITY_RAW.find(d => d.t >= cutoff) || EQUITY_RAW[0];
+    return 100 / point.v;
+  }
 
-  let path = "";
-  EQUITY.forEach((d, i) => { path += (i === 0 ? "M" : "L") + xScale(d.t).toFixed(1) + "," + yScale(d.v).toFixed(1) + " "; });
+  function render(startYear) {
+    const factor = rebaseFactor(startYear);
+    const cutoff = new Date(startYear, 0, 1).getTime();
+    const data = EQUITY_RAW.filter(d => d.t >= cutoff).map(d => ({ t: d.t, v: d.v * factor, date: d.date }));
+    const xs = data.map(d => d.t), ys = data.map(d => d.v);
 
-  let gridSvg = "";
-  yTicks.forEach(v => {
-    const y = yScale(v);
-    gridSvg += `<line x1="${PAD_L}" x2="${W - PAD_R}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
-    gridSvg += `<text x="4" y="${y + 3}">${v.toFixed(0)}</text>`;
-  });
-  quarterTicks(minX, maxX).forEach(t => {
-    const x = xScale(t);
-    const label = new Date(t).toLocaleString("en-US", { month: "short", year: "2-digit" });
-    gridSvg += `<text x="${x}" y="${H - 6}" text-anchor="middle">${label}</text>`;
-  });
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const yTicks = niceTicks(Math.min(...ys), Math.max(...ys), 5);
+    const minY = yTicks[0], maxY = yTicks[yTicks.length - 1];
+    const xScale = t => PAD_L + (t - minX) / (maxX - minX) * (W - PAD_L - PAD_R);
+    const yScale = v => H - PAD_B - (v - minY) / (maxY - minY) * (H - PAD_T - PAD_B);
 
-  svg.innerHTML = gridSvg +
-    `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>` +
-    `<circle id="hover-dot" r="4" fill="var(--accent)" style="display:none"/>`;
+    let path = "";
+    data.forEach((d, i) => { path += (i === 0 ? "M" : "L") + xScale(d.t).toFixed(1) + "," + yScale(d.v).toFixed(1) + " "; });
 
-  const dot = document.getElementById("hover-dot");
-  svg.addEventListener("mousemove", (e) => {
-    const rect = svg.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) / rect.width * W;
-    let best = 0, bestDist = Infinity;
-    EQUITY.forEach((d, i) => {
-      const dist = Math.abs(xScale(d.t) - mx);
-      if (dist < bestDist) { bestDist = dist; best = i; }
+    let gridSvg = "";
+    yTicks.forEach(v => {
+      const y = yScale(v);
+      gridSvg += `<line x1="${PAD_L}" x2="${W - PAD_R}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+      gridSvg += `<text x="4" y="${y + 3}">${v.toFixed(0)}</text>`;
     });
-    const d = EQUITY[best];
-    dot.setAttribute("cx", xScale(d.t));
-    dot.setAttribute("cy", yScale(d.v));
-    dot.style.display = "block";
-    tip.style.display = "block";
-    tip.style.left = (e.clientX - rect.left + 12) + "px";
-    tip.style.top = (e.clientY - rect.top - 10) + "px";
-    tip.textContent = d.date + "  $" + d.v.toFixed(2);
-  });
-  svg.addEventListener("mouseleave", () => { dot.style.display = "none"; tip.style.display = "none"; });
+    quarterTicks(minX, maxX).forEach(t => {
+      const x = xScale(t);
+      const label = new Date(t).toLocaleString("en-US", { month: "short", year: "2-digit" });
+      gridSvg += `<text x="${x}" y="${H - 6}" text-anchor="middle">${label}</text>`;
+    });
+
+    svg.innerHTML = gridSvg +
+      `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>` +
+      `<circle id="hover-dot" r="4" fill="var(--accent)" style="display:none"/>`;
+
+    const dot = document.getElementById("hover-dot");
+    svg.onmousemove = (e) => {
+      const rect = svg.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) / rect.width * W;
+      let best = 0, bestDist = Infinity;
+      data.forEach((d, i) => {
+        const dist = Math.abs(xScale(d.t) - mx);
+        if (dist < bestDist) { bestDist = dist; best = i; }
+      });
+      const d = data[best];
+      dot.setAttribute("cx", xScale(d.t));
+      dot.setAttribute("cy", yScale(d.v));
+      dot.style.display = "block";
+      tip.style.display = "block";
+      tip.style.left = (e.clientX - rect.left + 12) + "px";
+      tip.style.top = (e.clientY - rect.top - 10) + "px";
+      tip.textContent = d.date + "  $" + d.v.toFixed(2);
+    };
+    svg.onmouseleave = () => { dot.style.display = "none"; tip.style.display = "none"; };
+
+    const years = (data[data.length - 1].t - data[0].t) / (1000 * 60 * 60 * 24 * 365.25);
+    const cagr = years > 0 ? Math.pow(data[data.length - 1].v / data[0].v, 1 / years) - 1 : 0;
+    cagrLabel.textContent = `CAGR since ${startYear}-01-01: ${(cagr * 100).toFixed(1)}%`;
+
+    document.querySelectorAll("#holdings-body tr").forEach(tr => {
+      const rowYear = parseInt(tr.dataset.year, 10);
+      if (rowYear < startYear) { tr.style.display = "none"; return; }
+      tr.style.display = "";
+      const cell = tr.querySelector("td.num");
+      const raw = parseFloat(cell.dataset.value);
+      cell.textContent = (raw * factor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    });
+  }
+
+  yearSelect.value = String(DEFAULT_START_YEAR);
+  yearSelect.addEventListener("change", () => render(parseInt(yearSelect.value, 10)));
+  render(DEFAULT_START_YEAR);
 })();
 </script>
 </body>
@@ -192,7 +230,9 @@ const EQUITY = __EQUITY_JSON__;
 """
 
 ACTIVITY_ROW = """<div class="activity-row"><span class="activity-date">{date}</span><span>{text}</span></div>"""
-TABLE_ROW = """<tr><td>{period}</td><td>{entry_date}</td><td class="tickers">{holdings}</td><td class="num">{value}</td></tr>"""
+TABLE_ROW = ('<tr data-year="{year}"><td>{period}</td><td>{entry_date}</td>'
+             '<td class="tickers">{holdings}</td><td class="num" data-value="{raw_value}">{value}</td></tr>')
+DEFAULT_START_YEAR = 2025
 
 
 def _diff_text(old: set, new: set) -> str:
@@ -231,23 +271,24 @@ def build():
         value = value_by_date.loc[entry_ts] if entry_ts in value_by_date.index else None
         value_str = f"{value:,.2f}" if value is not None else "-"
         table_rows.append(TABLE_ROW.format(
-            period=row["period"], entry_date=row["entry_date"],
-            holdings=row["holdings"].replace(",", ", "), value=value_str))
+            year=int(row["period"][:4]), period=row["period"], entry_date=row["entry_date"],
+            holdings=row["holdings"].replace(",", ", "), value=value_str,
+            raw_value=value if value is not None else 0))
 
     as_of = equity["date"].max().date().isoformat()
-
-    start_date, start_value = equity["date"].iloc[0], equity["value"].iloc[0]
-    end_date, end_value = equity["date"].iloc[-1], equity["value"].iloc[-1]
-    years = (end_date - start_date).days / 365.25
-    cagr = (end_value / start_value) ** (1 / years) - 1 if years > 0 else 0.0
-    cagr_label = f"CAGR since {start_date.date().isoformat()}: {cagr * 100:+.1f}%"
+    min_year = equity["date"].min().year
+    max_year = equity["date"].max().year
+    year_options = "\n".join(
+        f'<option value="{y}"{" selected" if y == DEFAULT_START_YEAR else ""}>{y}</option>'
+        for y in range(min_year, max_year + 1))
 
     html = (PAGE_TEMPLATE
             .replace("__AS_OF__", as_of)
             .replace("__ACTIVITY_HTML__", activity_html)
             .replace("__TABLE_ROWS__", "\n".join(table_rows))
             .replace("__EQUITY_JSON__", json.dumps(equity_points))
-            .replace("__CAGR_LABEL__", cagr_label))
+            .replace("__YEAR_OPTIONS__", year_options)
+            .replace("__DEFAULT_START_YEAR__", str(DEFAULT_START_YEAR)))
     OUT_HTML.write_text(html, encoding="utf-8")
     print(f"Wrote {OUT_HTML} ({len(equity_points)} equity points, {len(rebal)} rebalance rows)")
 
