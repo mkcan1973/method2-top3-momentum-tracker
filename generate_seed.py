@@ -43,6 +43,15 @@ def main():
     spy_bars = all_bars["SPY"]
     eq_indexed = eq_df.set_index("date")["value"]
 
+    # Stored as raw close (not rebased) - rebasing happens client-side, same as
+    # EQUITY_RAW, which also keeps live daily appends trivial (just the day's
+    # close, no basis-chaining math needed).
+    spy_window = spy_bars.loc[eq_df["date"].iloc[0]:eq_df["date"].iloc[-1], "close"]
+    spy_df = spy_window.reset_index()
+    spy_df.columns = ["date", "value"]
+    spy_df.to_csv(OUT_DIR / "spy_history.csv", index=False)
+    print(f"Wrote spy_history.csv: {len(spy_df)} rows, {spy_df['date'].iloc[0].date()}..{spy_df['date'].iloc[-1].date()}")
+
     entry_dates, entry_prices_col, basis_per_slot_col = [], [], []
     for _, row in log_df.iterrows():
         period = pd.Period(row["period"], freq="M")

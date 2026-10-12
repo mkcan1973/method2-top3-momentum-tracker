@@ -12,6 +12,7 @@ import pandas as pd
 OUT_DIR = Path(__file__).parent
 EQUITY_CSV = OUT_DIR / "equity_history.csv"
 REBALANCE_CSV = OUT_DIR / "rebalance_log.csv"
+SPY_CSV = OUT_DIR / "spy_history.csv"
 OUT_HTML = OUT_DIR / "index.html"
 
 PAGE_TEMPLATE = """<!DOCTYPE html>
@@ -25,19 +26,19 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 <style>
 :root {
   --bg-page: #f6f7f9; --bg-panel: #ffffff; --ink-1: #16181d; --ink-2: #555b66;
-  --border: #e3e5e9; --accent: #2a66f0; --up: #1a8a4a; --down: #d1402f;
+  --border: #e3e5e9; --accent: #2a66f0; --up: #1a8a4a; --down: #d1402f; --bench: #c07a1e;
   --chip-bg: #eef2fd;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg-page: #14161a; --bg-panel: #1c1f26; --ink-1: #eef0f3; --ink-2: #a3a9b3;
-    --border: #2d313a; --accent: #6f9bff; --up: #38c172; --down: #ff6b5e;
+    --border: #2d313a; --accent: #6f9bff; --up: #38c172; --down: #ff6b5e; --bench: #e0a940;
     --chip-bg: #202845;
   }
 }
 :root[data-theme="dark"] {
   --bg-page: #14161a; --bg-panel: #1c1f26; --ink-1: #eef0f3; --ink-2: #a3a9b3;
-  --border: #2d313a; --accent: #6f9bff; --up: #38c172; --down: #ff6b5e;
+  --border: #2d313a; --accent: #6f9bff; --up: #38c172; --down: #ff6b5e; --bench: #e0a940;
   --chip-bg: #202845;
 }
 * { box-sizing: border-box; }
@@ -92,9 +93,16 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
         </select>
       </label>
     </div>
-    <div style="position:relative; margin-top:8px;">
+    <div style="font-size:0.8rem; color:var(--ink-2); margin-top:4px;">
+      <span style="color:var(--accent);">&#9644;</span> strategy &nbsp;
+      <span style="color:var(--bench);">&#9644;</span> S&amp;P 500 (SPY)
+    </div>
+    <div style="position:relative; margin-top:4px;">
       <svg id="chart" viewBox="0 0 1040 300" width="100%" style="overflow:visible;"></svg>
-      <div id="cagr-label" style="position:absolute; top:4px; right:6px; font-size:0.85rem; font-weight:600; color:var(--accent); font-family:'IBM Plex Mono',monospace;"></div>
+      <div style="position:absolute; top:4px; right:6px; text-align:right; font-family:'IBM Plex Mono',monospace;">
+        <div id="cagr-label" style="font-size:0.85rem; font-weight:600; color:var(--accent);"></div>
+        <div id="spy-cagr-label" style="font-size:0.85rem; font-weight:600; color:var(--bench);"></div>
+      </div>
       <div id="chart-tooltip"></div>
     </div>
   </div>
@@ -104,6 +112,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
     <p class="sub" style="margin:0 0 8px;">Bars: each calendar year's own return. Line: cumulative CAGR from the selected start year through the end of that year. Current year is partial (YTD).</p>
     <div style="position:relative;">
       <svg id="returns-chart" viewBox="0 0 1040 260" width="100%" style="overflow:visible;"></svg>
+      <div id="returns-spy-cagr-label" style="position:absolute; top:4px; right:6px; font-size:0.85rem; font-weight:600; color:var(--bench); font-family:'IBM Plex Mono',monospace;"></div>
       <div id="returns-tooltip" class="tooltip-box"></div>
     </div>
   </div>
@@ -127,11 +136,13 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
 </div>
 <script>
 const EQUITY_RAW = __EQUITY_JSON__;
+const SPY_RAW = __SPY_JSON__;
 const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
 (function () {
   const svg = document.getElementById("chart");
   const tip = document.getElementById("chart-tooltip");
   const cagrLabel = document.getElementById("cagr-label");
+  const spyCagrLabel = document.getElementById("spy-cagr-label");
   const yearSelect = document.getElementById("start-year");
   const W = 1040, H = 300, PAD_L = 50, PAD_R = 10, PAD_T = 14, PAD_B = 26;
 
@@ -167,17 +178,22 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
     return ticks;
   }
 
-  function rebaseFactor(startYear) {
+  function rebaseSeries(raw, startYear) {
     const cutoff = new Date(startYear, 0, 1).getTime();
-    const point = EQUITY_RAW.find(d => d.t >= cutoff) || EQUITY_RAW[0];
-    return 100 / point.v;
+    const point = raw.find(d => d.t >= cutoff) || raw[0];
+    const factor = 100 / point.v;
+    return raw.filter(d => d.t >= cutoff).map(d => ({ t: d.t, v: d.v * factor, date: d.date }));
+  }
+
+  function seriesCagr(data) {
+    const years = (data[data.length - 1].t - data[0].t) / (1000 * 60 * 60 * 24 * 365.25);
+    return years > 0 ? Math.pow(data[data.length - 1].v / data[0].v, 1 / years) - 1 : 0;
   }
 
   function render(startYear) {
-    const factor = rebaseFactor(startYear);
-    const cutoff = new Date(startYear, 0, 1).getTime();
-    const data = EQUITY_RAW.filter(d => d.t >= cutoff).map(d => ({ t: d.t, v: d.v * factor, date: d.date }));
-    const xs = data.map(d => d.t), ys = data.map(d => d.v);
+    const data = rebaseSeries(EQUITY_RAW, startYear);
+    const spyData = rebaseSeries(SPY_RAW, startYear);
+    const xs = data.map(d => d.t), ys = data.map(d => d.v).concat(spyData.map(d => d.v));
 
     const minX = Math.min(...xs), maxX = Math.max(...xs);
     const yTicks = niceTicks(Math.min(...ys), Math.max(...ys), 5);
@@ -187,6 +203,8 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
 
     let path = "";
     data.forEach((d, i) => { path += (i === 0 ? "M" : "L") + xScale(d.t).toFixed(1) + "," + yScale(d.v).toFixed(1) + " "; });
+    let spyPath = "";
+    spyData.forEach((d, i) => { spyPath += (i === 0 ? "M" : "L") + xScale(d.t).toFixed(1) + "," + yScale(d.v).toFixed(1) + " "; });
 
     let gridSvg = "";
     yTicks.forEach(v => {
@@ -205,10 +223,13 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
     });
 
     svg.innerHTML = gridSvg +
+      `<path d="${spyPath}" fill="none" stroke="var(--bench)" stroke-width="2"/>` +
       `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>` +
-      `<circle id="hover-dot" r="4" fill="var(--accent)" style="display:none"/>`;
+      `<circle id="hover-dot" r="4" fill="var(--accent)" style="display:none"/>` +
+      `<circle id="hover-dot-spy" r="4" fill="var(--bench)" style="display:none"/>`;
 
     const dot = document.getElementById("hover-dot");
+    const dotSpy = document.getElementById("hover-dot-spy");
     svg.onmousemove = (e) => {
       const rect = svg.getBoundingClientRect();
       const mx = (e.clientX - rect.left) / rect.width * W;
@@ -218,27 +239,31 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
         if (dist < bestDist) { bestDist = dist; best = i; }
       });
       const d = data[best];
+      const dSpy = spyData[Math.min(best, spyData.length - 1)];
       dot.setAttribute("cx", xScale(d.t));
       dot.setAttribute("cy", yScale(d.v));
       dot.style.display = "block";
+      dotSpy.setAttribute("cx", xScale(dSpy.t));
+      dotSpy.setAttribute("cy", yScale(dSpy.v));
+      dotSpy.style.display = "block";
       tip.style.display = "block";
       tip.style.left = (e.clientX - rect.left + 12) + "px";
       tip.style.top = (e.clientY - rect.top - 10) + "px";
-      tip.textContent = d.date + "  $" + d.v.toFixed(2);
+      tip.innerHTML = `${d.date}<br>strategy: $${d.v.toFixed(2)}<br>S&amp;P 500: $${dSpy.v.toFixed(2)}`;
     };
-    svg.onmouseleave = () => { dot.style.display = "none"; tip.style.display = "none"; };
+    svg.onmouseleave = () => { dot.style.display = "none"; dotSpy.style.display = "none"; tip.style.display = "none"; };
 
-    const years = (data[data.length - 1].t - data[0].t) / (1000 * 60 * 60 * 24 * 365.25);
-    const cagr = years > 0 ? Math.pow(data[data.length - 1].v / data[0].v, 1 / years) - 1 : 0;
-    cagrLabel.textContent = `CAGR since ${startYear}-01-01: ${(cagr * 100).toFixed(1)}%`;
+    cagrLabel.textContent = `Strategy CAGR since ${startYear}-01-01: ${(seriesCagr(data) * 100).toFixed(1)}%`;
+    spyCagrLabel.textContent = `S&P 500 CAGR since ${startYear}-01-01: ${(seriesCagr(spyData) * 100).toFixed(1)}%`;
 
+    const tableFactor = 100 / (EQUITY_RAW.find(d => d.t >= minX) || EQUITY_RAW[0]).v;
     document.querySelectorAll("#holdings-body tr").forEach(tr => {
       const rowYear = parseInt(tr.dataset.year, 10);
       if (rowYear < startYear) { tr.style.display = "none"; return; }
       tr.style.display = "";
       const cell = tr.querySelector("td.num");
       const raw = parseFloat(cell.dataset.value);
-      cell.textContent = (raw * factor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      cell.textContent = (raw * tableFactor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     });
   }
 
@@ -249,6 +274,13 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
     const todayYear = new Date().getFullYear();
     const maxYear = new Date(EQUITY_RAW[EQUITY_RAW.length - 1].t).getFullYear();
     const startPoint = EQUITY_RAW.find(d => new Date(d.t).getFullYear() >= startYear) || EQUITY_RAW[0];
+
+    const spyStart = SPY_RAW.find(d => new Date(d.t).getFullYear() >= startYear) || SPY_RAW[0];
+    const spyEnd = SPY_RAW[SPY_RAW.length - 1];
+    const spyYearsElapsed = (spyEnd.t - spyStart.t) / (1000 * 60 * 60 * 24 * 365.25);
+    const spyCagrToNow = spyYearsElapsed > 0 ? Math.pow(spyEnd.v / spyStart.v, 1 / spyYearsElapsed) - 1 : 0;
+    document.getElementById("returns-spy-cagr-label").textContent =
+      `S&P 500 CAGR since ${startYear}: ${(spyCagrToNow * 100).toFixed(1)}%`;
 
     const bars = [];
     for (let y = startYear; y <= maxYear; y++) {
@@ -366,9 +398,12 @@ def _diff_text(old: set, new: set) -> str:
 def build():
     equity = pd.read_csv(EQUITY_CSV, parse_dates=["date"]).sort_values("date")
     rebal = pd.read_csv(REBALANCE_CSV)
+    spy = pd.read_csv(SPY_CSV, parse_dates=["date"]).sort_values("date")
 
     equity_points = [{"t": int(row.date.timestamp() * 1000), "v": round(float(row.value), 2),
                        "date": row.date.date().isoformat()} for row in equity.itertuples()]
+    spy_points = [{"t": int(row.date.timestamp() * 1000), "v": round(float(row.value), 2),
+                    "date": row.date.date().isoformat()} for row in spy.itertuples()]
 
     activity_rows = []
     for i in range(len(rebal) - 1, max(len(rebal) - 3, 0), -1):
@@ -401,6 +436,7 @@ def build():
             .replace("__ACTIVITY_HTML__", activity_html)
             .replace("__TABLE_ROWS__", "\n".join(table_rows))
             .replace("__EQUITY_JSON__", json.dumps(equity_points))
+            .replace("__SPY_JSON__", json.dumps(spy_points))
             .replace("__YEAR_OPTIONS__", year_options)
             .replace("__DEFAULT_START_YEAR__", str(DEFAULT_START_YEAR)))
     OUT_HTML.write_text(html, encoding="utf-8")

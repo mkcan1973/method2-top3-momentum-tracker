@@ -21,6 +21,7 @@ import build_page
 OUT_DIR = Path(__file__).parent
 EQUITY_CSV = OUT_DIR / "equity_history.csv"
 REBALANCE_CSV = OUT_DIR / "rebalance_log.csv"
+SPY_CSV = OUT_DIR / "spy_history.csv"
 
 
 def _load():
@@ -53,6 +54,25 @@ def _upsert_equity_row(equity: pd.DataFrame, asof: pd.Timestamp, value: float) -
     return pd.concat([equity, pd.DataFrame([{"date": asof, "value": value}])], ignore_index=True).sort_values("date")
 
 
+def _update_spy_benchmark(asof: pd.Timestamp):
+    """SPY is stored as raw close (not rebased) - a live append is just
+    today's close, no basis-chaining needed. Best-effort: a failure here
+    shouldn't block the actual strategy update."""
+    try:
+        spy = pd.read_csv(SPY_CSV, parse_dates=["date"])
+        if asof in spy["date"].values:
+            return
+        recent_spy = fetch.fetch_prices(["SPY"], start=(asof - pd.Timedelta(days=5)).strftime("%Y-%m-%d"))
+        close = recent_spy.get("SPY", pd.DataFrame())
+        if asof not in close.index:
+            print(f"  WARNING: no SPY close for {asof.date()}; skipping benchmark update.")
+            return
+        spy = _upsert_equity_row(spy, asof, float(close.loc[asof, "close"]))
+        spy.to_csv(SPY_CSV, index=False)
+    except Exception as e:
+        print(f"  WARNING: SPY benchmark update failed ({e}); continuing without it.")
+
+
 def main():
     equity, rebal = _load()
     last_period, entry_prices, basis = _last_holding_state(rebal)
@@ -67,6 +87,8 @@ def main():
     if not common_dates:
         common_dates = set.union(*(set(df.index) for df in recent.values()))
     asof = max(common_dates)
+
+    _update_spy_benchmark(asof)
 
     if not equity.empty and asof <= equity["date"].max():
         print(f"Already up to date through {asof.date()}; rebuilding page only.")
