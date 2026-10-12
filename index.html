@@ -119,25 +119,53 @@ const EQUITY = [{"t": 1735776000000, "v": 100.0, "date": "2025-01-02"}, {"t": 17
 (function () {
   const svg = document.getElementById("chart");
   const tip = document.getElementById("chart-tooltip");
-  const W = 1040, H = 300, PAD_L = 50, PAD_R = 10, PAD_T = 14, PAD_B = 24;
+  const W = 1040, H = 300, PAD_L = 50, PAD_R = 10, PAD_T = 14, PAD_B = 26;
   const xs = EQUITY.map(d => d.t);
   const ys = EQUITY.map(d => d.v);
-  const minY = Math.min(...ys) * 0.97, maxY = Math.max(...ys) * 1.03;
+
+  function niceTicks(dataMin, dataMax, targetCount) {
+    const rough = (dataMax - dataMin) / targetCount || 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+    const norm = rough / mag;
+    const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+    const niceMin = Math.floor(dataMin / step) * step;
+    const niceMax = Math.ceil(dataMax / step) * step;
+    const ticks = [];
+    for (let v = niceMin; v <= niceMax + step / 2; v += step) ticks.push(v);
+    return ticks;
+  }
+
+  function quarterTicks(minT, maxT) {
+    const start = new Date(minT);
+    let d = new Date(start.getFullYear(), Math.floor(start.getMonth() / 3) * 3, 1);
+    const ticks = [];
+    while (d.getTime() <= maxT) {
+      if (d.getTime() >= minT) ticks.push(d.getTime());
+      d = new Date(d.getFullYear(), d.getMonth() + 3, 1);
+    }
+    return ticks;
+  }
+
   const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const yTicks = niceTicks(Math.min(...ys), Math.max(...ys), 5);
+  const minY = yTicks[0], maxY = yTicks[yTicks.length - 1];
   const xScale = t => PAD_L + (t - minX) / (maxX - minX) * (W - PAD_L - PAD_R);
   const yScale = v => H - PAD_B - (v - minY) / (maxY - minY) * (H - PAD_T - PAD_B);
 
   let path = "";
   EQUITY.forEach((d, i) => { path += (i === 0 ? "M" : "L") + xScale(d.t).toFixed(1) + "," + yScale(d.v).toFixed(1) + " "; });
 
-  const gridLines = 4;
   let gridSvg = "";
-  for (let i = 0; i <= gridLines; i++) {
-    const v = minY + (maxY - minY) * i / gridLines;
+  yTicks.forEach(v => {
     const y = yScale(v);
     gridSvg += `<line x1="${PAD_L}" x2="${W - PAD_R}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
     gridSvg += `<text x="4" y="${y + 3}">${v.toFixed(0)}</text>`;
-  }
+  });
+  quarterTicks(minX, maxX).forEach(t => {
+    const x = xScale(t);
+    const label = new Date(t).toLocaleString("en-US", { month: "short", year: "2-digit" });
+    gridSvg += `<text x="${x}" y="${H - 6}" text-anchor="middle">${label}</text>`;
+  });
 
   svg.innerHTML = gridSvg +
     `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>` +
