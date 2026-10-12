@@ -245,7 +245,7 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
   function renderReturns(startYear) {
     const svg2 = document.getElementById("returns-chart");
     const tip2 = document.getElementById("returns-tooltip");
-    const W2 = 1040, H2 = 260, PAD_L2 = 50, PAD_R2 = 10, PAD_T2 = 14, PAD_B2 = 24;
+    const W2 = 1040, H2 = 260, PAD_L2 = 50, PAD_R2 = 46, PAD_T2 = 14, PAD_B2 = 24;
     const todayYear = new Date().getFullYear();
     const maxYear = new Date(EQUITY_RAW[EQUITY_RAW.length - 1].t).getFullYear();
     const startPoint = EQUITY_RAW.find(d => new Date(d.t).getFullYear() >= startYear) || EQUITY_RAW[0];
@@ -263,24 +263,33 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
 
     const rets = bars.map(b => b.ret * 100);
     const cagrs = bars.map(b => b.cumCagr * 100);
-    const yTicks = niceTicks(Math.min(0, ...rets, ...cagrs), Math.max(0, ...rets, ...cagrs), 5);
-    const minY = yTicks[0], maxY = yTicks[yTicks.length - 1];
-    const yScale = v => H2 - PAD_B2 - (v - minY) / (maxY - minY) * (H2 - PAD_T2 - PAD_B2);
+    const yTicksL = niceTicks(Math.min(0, ...rets), Math.max(0, ...rets), 5);
+    const minYL = yTicksL[0], maxYL = yTicksL[yTicksL.length - 1];
+    const yScaleL = v => H2 - PAD_B2 - (v - minYL) / (maxYL - minYL) * (H2 - PAD_T2 - PAD_B2);
+
+    const yTicksR = niceTicks(Math.min(0, ...cagrs), Math.max(0, ...cagrs), 5);
+    const minYR = yTicksR[0], maxYR = yTicksR[yTicksR.length - 1];
+    const yScaleR = v => H2 - PAD_B2 - (v - minYR) / (maxYR - minYR) * (H2 - PAD_T2 - PAD_B2);
+
     const slot = (W2 - PAD_L2 - PAD_R2) / bars.length;
     const barW = slot * 0.55;
     const xCenter = i => PAD_L2 + i * slot + slot / 2;
 
     let gridSvg = "";
-    yTicks.forEach(v => {
-      const y = yScale(v);
+    yTicksL.forEach(v => {
+      const y = yScaleL(v);
       gridSvg += `<line x1="${PAD_L2}" x2="${W2 - PAD_R2}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
       gridSvg += `<text x="4" y="${y + 3}">${v.toFixed(0)}%</text>`;
+    });
+    yTicksR.forEach(v => {
+      const y = yScaleR(v);
+      gridSvg += `<text x="${W2 - PAD_R2 + 6}" y="${y + 3}" fill="var(--accent)">${v.toFixed(0)}%</text>`;
     });
 
     let barsSvg = "";
     bars.forEach((b, i) => {
       const x = PAD_L2 + i * slot + (slot - barW) / 2;
-      const yZero = yScale(0), yVal = yScale(b.ret * 100);
+      const yZero = yScaleL(0), yVal = yScaleL(b.ret * 100);
       const top = Math.min(yZero, yVal), height = Math.max(1, Math.abs(yZero - yVal));
       const color = b.ret >= 0 ? "var(--up)" : "var(--down)";
       const opacity = b.partial ? 0.55 : 1;
@@ -292,17 +301,17 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
     let cagrSvg = "";
     let linePath = "";
     bars.forEach((b, i) => {
-      const px = xCenter(i), py = yScale(b.cumCagr * 100);
+      const px = xCenter(i), py = yScaleR(b.cumCagr * 100);
       linePath += (i === 0 ? "M" : "L") + px.toFixed(1) + "," + py.toFixed(1) + " ";
       cagrSvg += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3" fill="var(--accent)"/>`;
     });
     cagrSvg = `<path d="${linePath}" fill="none" stroke="var(--accent)" stroke-width="2"/>` + cagrSvg;
 
     const legendSvg =
-      `<rect x="${W2 - 230}" y="0" width="10" height="10" fill="var(--up)"/>` +
-      `<text x="${W2 - 215}" y="9">Year's own return</text>` +
-      `<line x1="${W2 - 230}" x2="${W2 - 220}" y1="20" y2="20" stroke="var(--accent)" stroke-width="2"/>` +
-      `<text x="${W2 - 215}" y="23">CAGR since ${startYear}</text>`;
+      `<rect x="${W2 - 270}" y="0" width="10" height="10" fill="var(--up)"/>` +
+      `<text x="${W2 - 255}" y="9">Year's own return (left axis)</text>` +
+      `<line x1="${W2 - 270}" x2="${W2 - 260}" y1="20" y2="20" stroke="var(--accent)" stroke-width="2"/>` +
+      `<text x="${W2 - 255}" y="23" fill="var(--accent)">CAGR since ${startYear} (right axis)</text>`;
 
     svg2.innerHTML = gridSvg + barsSvg + cagrSvg + legendSvg;
     svg2.onmousemove = (e) => {
