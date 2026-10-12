@@ -87,6 +87,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
     <h2>Equity curve</h2>
     <div style="position:relative;">
       <svg id="chart" viewBox="0 0 1040 300" width="100%" style="overflow:visible;"></svg>
+      <div style="position:absolute; top:4px; right:6px; font-size:0.85rem; font-weight:600; color:var(--accent); font-family:'IBM Plex Mono',monospace;">__CAGR_LABEL__</div>
       <div id="chart-tooltip"></div>
     </div>
   </div>
@@ -235,11 +236,18 @@ def build():
 
     as_of = equity["date"].max().date().isoformat()
 
+    start_date, start_value = equity["date"].iloc[0], equity["value"].iloc[0]
+    end_date, end_value = equity["date"].iloc[-1], equity["value"].iloc[-1]
+    years = (end_date - start_date).days / 365.25
+    cagr = (end_value / start_value) ** (1 / years) - 1 if years > 0 else 0.0
+    cagr_label = f"CAGR since {start_date.date().isoformat()}: {cagr * 100:+.1f}%"
+
     html = (PAGE_TEMPLATE
             .replace("__AS_OF__", as_of)
             .replace("__ACTIVITY_HTML__", activity_html)
             .replace("__TABLE_ROWS__", "\n".join(table_rows))
-            .replace("__EQUITY_JSON__", json.dumps(equity_points)))
+            .replace("__EQUITY_JSON__", json.dumps(equity_points))
+            .replace("__CAGR_LABEL__", cagr_label))
     OUT_HTML.write_text(html, encoding="utf-8")
     print(f"Wrote {OUT_HTML} ({len(equity_points)} equity points, {len(rebal)} rebalance rows)")
 
