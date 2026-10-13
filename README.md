@@ -1,11 +1,11 @@
 # Blended Momentum Tracker
 
-Live dashboard for a 2-sleeve blend, rebalanced to a fixed 60/40 split every
+Live dashboard for a 2-sleeve blend, rebalanced to a fixed 50/50 split every
 January:
-- **Sleeve A (60%)**: one stock, picked every January by the prior calendar
+- **Sleeve A (50%)**: one stock, picked every January by the prior calendar
   year's best point-in-time-eligible S&P 500 return, held all year with a
   35% stop-loss (method2's `rotation_backtest.py`, freq="year").
-- **Sleeve B (40%)**: the existing top-3, 6-month-lookback momentum
+- **Sleeve B (50%)**: the existing top-3, 6-month-lookback momentum
   strategy, rebalanced monthly (method2's `top_n_momentum.py`).
 
 This combo was chosen in `method_combination_analysis.py` /
@@ -31,10 +31,10 @@ after market close:
   `equity_history.csv`.
 - Monthly (not January): sleeve B re-ranks and rebalances on its own
   running capital; sleeve A is untouched.
-- January: combined capital is re-split 60/40; sleeve A picks its new
+- January: combined capital is re-split 50/50; sleeve A picks its new
   stock (current real S&P 500 list - no point-in-time correction needed
   for a live, present-tense decision); sleeve B does its normal monthly
-  rebalance on the new 40% basis.
+  rebalance on the new 50% basis.
 - Sleeve A's 35% stop-loss is checked daily off its own recent price
   window; once triggered it sits in frozen cash for the rest of that year.
 - Rebuilds `index.html` and pushes everything back to `main`.
@@ -46,7 +46,7 @@ after market close:
 - `rank.py` - monthly top-3 momentum ranking + yearly best-performer pick
   (same definitions as the backtests).
 - `run_daily.py` - daily driver: both sleeves' mark-to-market, monthly
-  sleeve B rebalance, annual sleeve A pick + 60/40 reweight.
+  sleeve B rebalance, annual sleeve A pick + 50/50 reweight.
 - `build_page.py` - builds `index.html` from the three CSV logs
   (`equity_history.csv`, `rebalance_log.csv` for sleeve B, `sleeve_a_log.csv`
   for sleeve A).

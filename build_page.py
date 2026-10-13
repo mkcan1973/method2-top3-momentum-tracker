@@ -78,7 +78,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
 <body>
 <div class="wrap">
   <h1>Blended Momentum Tracker</h1>
-  <p class="sub">As of __AS_OF__ &middot; 60% sleeve A (one stock, picked every January by prior-year return, 35% stop-loss) + 40% sleeve B (top-3, 6-month momentum, rebalanced monthly) &middot; rebalanced to 60/40 every January</p>
+  <p class="sub">As of __AS_OF__ &middot; 50% sleeve A (one stock, picked every January by prior-year return, 35% stop-loss) + 50% sleeve B (top-3, 6-month momentum, rebalanced monthly) &middot; rebalanced to 50/50 every January</p>
 
   <div class="panel">
     <h2>Current holdings</h2>
@@ -140,8 +140,8 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
   </div>
 
   <footer>
-    Research/educational tracker only - not auto-traded, not investment advice. This blend (60% sleeve A /
-    40% sleeve B, rebalanced every January) was chosen from method2's method_combination_analysis.py as the
+    Research/educational tracker only - not auto-traded, not investment advice. This blend (50% sleeve A /
+    50% sleeve B, rebalanced every January) was chosen from method2's method_combination_analysis.py as the
     2-method pair with the most consistent year-by-year returns (13/13 up-years, 2013-2025, point-in-time
     corrected S&amp;P 500 membership). Holdings through the method2 backtest's last completed period come from
     that historical backtest (C:\\mark\\scripts\\method2); everything after that is computed live against the
@@ -434,9 +434,9 @@ def build():
         a_status = f'holding since {cur_a["entry_date"]}'
     cur_b = rebal.iloc[-1]
     current_holdings_html = (
-        f'<div class="activity-row"><span>Sleeve A (60%)</span>'
+        f'<div class="activity-row"><span>Sleeve A (50%)</span>'
         f'<span><span class="chip">{cur_a["ticker"]}</span> {a_status}</span></div>'
-        f'<div class="activity-row"><span>Sleeve B (40%)</span>'
+        f'<div class="activity-row"><span>Sleeve B (50%)</span>'
         f'<span>' + ' '.join(f'<span class="chip">{t}</span>' for t in cur_b["holdings"].split(",")) +
         f' since {cur_b["entry_date"]}</span></div>'
     )

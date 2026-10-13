@@ -1,9 +1,9 @@
 """
-Daily driver for the blended tracker: 60% sleeve A (one stock, picked
+Daily driver for the blended tracker: 50% sleeve A (one stock, picked
 every January by the prior calendar year's best point-in-time-eligible
-S&P 500 return, 35% stop-loss) + 40% sleeve B (the existing top-3,
+S&P 500 return, 35% stop-loss) + 50% sleeve B (the existing top-3,
 6-month-lookback momentum strategy, rebalanced monthly), rebalanced to
-that 60/40 split every January. This combo was chosen in
+that 50/50 split every January. This combo was chosen in
 C:\\mark\\scripts\\method2\\method_combination_analysis.py as the pair
 giving the most consistent year-by-year returns (13/13 up-years,
 2013-2025, point-in-time corrected) among all the method2 variants.
@@ -11,12 +11,12 @@ giving the most consistent year-by-year returns (13/13 up-years,
 Every run: marks both sleeves to market and appends today's combined
 value to equity_history.csv.
   - Monthly (not January): sleeve B re-ranks and rebalances on its own
-    40%-of-combined basis; sleeve A is untouched.
+    50%-of-combined basis; sleeve A is untouched.
   - January (new year vs. sleeve_a_log.csv's last row - naturally
     self-retrying if a run fails on the actual 1st, same as the old
-    monthly-only logic was): combined capital is re-split 60/40, sleeve A
+    monthly-only logic was): combined capital is re-split 50/50, sleeve A
     picks its new stock, sleeve B does its normal monthly rebalance on
-    the new 40% basis.
+    the new 50% basis.
   - Sleeve A's stop-loss is checked daily off its own recent price
     window (no persisted "pending" state needed) and, once triggered,
     sleeve A sits in frozen cash for the rest of that year.
@@ -38,8 +38,8 @@ REBALANCE_CSV = OUT_DIR / "rebalance_log.csv"          # sleeve B (top3, monthly
 SLEEVE_A_CSV = OUT_DIR / "sleeve_a_log.csv"             # sleeve A (yearly single-stock)
 SPY_CSV = OUT_DIR / "spy_history.csv"
 
-WEIGHT_A = 0.6
-WEIGHT_B = 0.4
+WEIGHT_A = 0.5
+WEIGHT_B = 0.5
 
 
 def _load():
@@ -192,7 +192,7 @@ def main():
     asof_period = pd.Period(asof, freq="M")
 
     if asof.year > sleeve_a_year:
-        print(f"New year detected ({asof.year} > {sleeve_a_year}) - annual 60/40 rebalance on {asof.date()}.")
+        print(f"New year detected ({asof.year} > {sleeve_a_year}) - annual 50/50 rebalance on {asof.date()}.")
         old_row = sleeve_a.iloc[-1]
         sleeve_a_ticker_df = recent.get(sleeve_a_ticker)
         if bool(old_row["stopped_out"]):
