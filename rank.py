@@ -12,6 +12,8 @@ import pandas as pd
 MIN_SESSIONS_MONTH = 15
 LOOKBACK_MONTHS = 6
 N_HOLD = 3
+MIN_SESSIONS_YEAR = 200
+STOP_LOSS_PCT = 0.35
 
 
 def month_return_table(bars_by_ticker: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -43,3 +45,18 @@ def pick_top_n(bars_by_ticker: dict[str, pd.DataFrame], as_of_period: pd.Period,
     ret_table = month_return_table(bars_by_ticker)
     trail = trailing_return(ret_table, as_of_period).dropna()
     return trail.sort_values(ascending=False).head(n).index.tolist()
+
+
+def pick_best_year(bars_by_ticker: dict[str, pd.DataFrame], year: int) -> str | None:
+    """Single best full-calendar-year close-to-close return - sleeve A's
+    annual pick, same definition as method2's rotation_backtest.py
+    (freq="year")."""
+    best_ticker, best_ret = None, None
+    for t, bars in bars_by_ticker.items():
+        yb = bars[bars.index.year == year]
+        if len(yb) < MIN_SESSIONS_YEAR:
+            continue
+        ret = yb["close"].iloc[-1] / yb["close"].iloc[0] - 1.0
+        if best_ret is None or ret > best_ret:
+            best_ticker, best_ret = t, ret
+    return best_ticker

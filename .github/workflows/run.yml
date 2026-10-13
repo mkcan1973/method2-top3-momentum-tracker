@@ -1,4 +1,4 @@
-name: Run method2 top-3 momentum tracker
+name: Run method2 blended momentum tracker
 "on":
   schedule:
     - cron: "0 21 * * 1-5"   # weekdays, 21:00 UTC (after US market close)
@@ -20,6 +20,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add equity_history.csv rebalance_log.csv spy_history.csv index.html sp500_constituents.json
+          git add equity_history.csv rebalance_log.csv sleeve_a_log.csv spy_history.csv index.html sp500_constituents.json
           git diff --staged --quiet || git commit -m "Run: $(date -u +%Y-%m-%dT%H:%M)Z"
           git push

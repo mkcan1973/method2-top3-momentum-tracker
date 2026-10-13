@@ -12,6 +12,7 @@ import pandas as pd
 OUT_DIR = Path(__file__).parent
 EQUITY_CSV = OUT_DIR / "equity_history.csv"
 REBALANCE_CSV = OUT_DIR / "rebalance_log.csv"
+SLEEVE_A_CSV = OUT_DIR / "sleeve_a_log.csv"
 SPY_CSV = OUT_DIR / "spy_history.csv"
 OUT_HTML = OUT_DIR / "index.html"
 
@@ -20,7 +21,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Top-3 Momentum Tracker</title>
+<title>Blended Momentum Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -76,8 +77,13 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
 </head>
 <body>
 <div class="wrap">
-  <h1>Top-3 Momentum Tracker</h1>
-  <p class="sub">As of __AS_OF__ &middot; monthly rebalance, equal-weight top 3 of the S&amp;P 500 by trailing 6-month return</p>
+  <h1>Blended Momentum Tracker</h1>
+  <p class="sub">As of __AS_OF__ &middot; 60% sleeve A (one stock, picked every January by prior-year return, 35% stop-loss) + 40% sleeve B (top-3, 6-month momentum, rebalanced monthly) &middot; rebalanced to 60/40 every January</p>
+
+  <div class="panel">
+    <h2>Current holdings</h2>
+    __CURRENT_HOLDINGS_HTML__
+  </div>
 
   <div class="panel">
     <h2>Recent activity</h2>
@@ -118,7 +124,15 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
   </div>
 
   <div class="panel">
-    <h2>Monthly holdings</h2>
+    <h2>Sleeve A: yearly pick history</h2>
+    <table>
+      <thead><tr><th>Year</th><th>Ticker</th><th>Entry date</th><th>Status</th><th class="num">Value ($100 base)</th></tr></thead>
+      <tbody id="sleeve-a-body">__SLEEVE_A_ROWS__</tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Sleeve B: monthly top-3 holdings</h2>
     <table>
       <thead><tr><th>Month</th><th>Rebalance date</th><th class="tickers">Holdings</th><th class="num">Value ($100 base)</th></tr></thead>
       <tbody id="holdings-body">__TABLE_ROWS__</tbody>
@@ -126,12 +140,14 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
   </div>
 
   <footer>
-    Research/educational tracker only - not auto-traded, not investment advice. Holdings from 2010-01 through
-    the method2 backtest's last completed month come from a point-in-time-corrected historical backtest
-    (C:\\mark\\scripts\\method2, S&amp;P 500 membership reconstructed from Wikipedia back to 2010); everything
-    after that is computed live, monthly, against the S&amp;P 500's actual current constituent list. No
-    transaction costs or taxes modeled. See the method2 project writeup for the strategy's known limitations
-    (no train/test split, recent performance concentrated in a handful of semiconductor/AI-memory names).
+    Research/educational tracker only - not auto-traded, not investment advice. This blend (60% sleeve A /
+    40% sleeve B, rebalanced every January) was chosen from method2's method_combination_analysis.py as the
+    2-method pair with the most consistent year-by-year returns (13/13 up-years, 2013-2025, point-in-time
+    corrected S&amp;P 500 membership). Holdings through the method2 backtest's last completed period come from
+    that historical backtest (C:\\mark\\scripts\\method2); everything after that is computed live against the
+    S&amp;P 500's actual current constituent list. No transaction costs or taxes modeled. Sleeve A is a
+    concentrated, small-sample, single-stock strategy - its strong backtested record reflects the specific
+    historical picks it happened to land on, not a robustly validated edge. No train/test split has been done.
   </footer>
 </div>
 <script>
@@ -257,7 +273,7 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
     spyCagrLabel.textContent = `S&P 500 CAGR since ${startYear}-01-01: ${(seriesCagr(spyData) * 100).toFixed(1)}%`;
 
     const tableFactor = 100 / (EQUITY_RAW.find(d => d.t >= minX) || EQUITY_RAW[0]).v;
-    document.querySelectorAll("#holdings-body tr").forEach(tr => {
+    document.querySelectorAll("#holdings-body tr, #sleeve-a-body tr").forEach(tr => {
       const rowYear = parseInt(tr.dataset.year, 10);
       if (rowYear < startYear) { tr.style.display = "none"; return; }
       tr.style.display = "";
@@ -378,6 +394,8 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
 ACTIVITY_ROW = """<div class="activity-row"><span class="activity-date">{date}</span><span>{text}</span></div>"""
 TABLE_ROW = ('<tr data-year="{year}"><td>{period}</td><td>{entry_date}</td>'
              '<td class="tickers">{holdings}</td><td class="num" data-value="{raw_value}">{value}</td></tr>')
+SLEEVE_A_ROW = ('<tr data-year="{year}"><td>{year}</td><td class="tickers">{ticker}</td><td>{entry_date}</td>'
+                 '<td>{status}</td><td class="num" data-value="{raw_value}">{value}</td></tr>')
 DEFAULT_START_YEAR = 2025
 
 
@@ -398,6 +416,7 @@ def _diff_text(old: set, new: set) -> str:
 def build():
     equity = pd.read_csv(EQUITY_CSV, parse_dates=["date"]).sort_values("date")
     rebal = pd.read_csv(REBALANCE_CSV)
+    sleeve_a = pd.read_csv(SLEEVE_A_CSV)
     spy = pd.read_csv(SPY_CSV, parse_dates=["date"]).sort_values("date")
 
     equity_points = [{"t": int(row.date.timestamp() * 1000), "v": round(float(row.value), 2),
@@ -405,15 +424,34 @@ def build():
     spy_points = [{"t": int(row.date.timestamp() * 1000), "v": round(float(row.value), 2),
                     "date": row.date.date().isoformat()} for row in spy.itertuples()]
 
-    activity_rows = []
+    value_by_date = equity.set_index("date")["value"]
+
+    # --- Current holdings box ---
+    cur_a = sleeve_a.iloc[-1]
+    if bool(cur_a["stopped_out"]):
+        a_status = f'stopped out {cur_a["exit_date"]} @ {float(cur_a["exit_price"]):.2f} — in cash until next January'
+    else:
+        a_status = f'holding since {cur_a["entry_date"]}'
+    cur_b = rebal.iloc[-1]
+    current_holdings_html = (
+        f'<div class="activity-row"><span>Sleeve A (60%)</span>'
+        f'<span><span class="chip">{cur_a["ticker"]}</span> {a_status}</span></div>'
+        f'<div class="activity-row"><span>Sleeve B (40%)</span>'
+        f'<span>' + ' '.join(f'<span class="chip">{t}</span>' for t in cur_b["holdings"].split(",")) +
+        f' since {cur_b["entry_date"]}</span></div>'
+    )
+
+    # --- Recent activity: sleeve A's current status + sleeve B's last 2 monthly diffs ---
+    activity_rows = [ACTIVITY_ROW.format(
+        date=cur_a["entry_date"] if not bool(cur_a["stopped_out"]) else cur_a["exit_date"],
+        text=f'Sleeve A: {cur_a["ticker"]} {a_status}')]
     for i in range(len(rebal) - 1, max(len(rebal) - 3, 0), -1):
         new_set = set(rebal.iloc[i]["holdings"].split(","))
         old_set = set(rebal.iloc[i - 1]["holdings"].split(",")) if i > 0 else set()
         text = _diff_text(old_set, new_set)
-        activity_rows.append(ACTIVITY_ROW.format(date=rebal.iloc[i]["entry_date"], text=text))
-    activity_html = "\n".join(activity_rows) if activity_rows else "<p>No rebalances recorded yet.</p>"
+        activity_rows.append(ACTIVITY_ROW.format(date=rebal.iloc[i]["entry_date"], text=f"Sleeve B: {text}"))
+    activity_html = "\n".join(activity_rows)
 
-    value_by_date = equity.set_index("date")["value"]
     table_rows = []
     for _, row in rebal.iloc[::-1].iterrows():
         entry_ts = pd.Timestamp(row["entry_date"])
@@ -424,6 +462,22 @@ def build():
             holdings=row["holdings"].replace(",", ", "), value=value_str,
             raw_value=value if value is not None else 0))
 
+    sleeve_a_rows = []
+    for idx, row in sleeve_a.iloc[::-1].iterrows():
+        entry_ts = pd.Timestamp(row["entry_date"])
+        value = value_by_date.loc[entry_ts] if entry_ts in value_by_date.index else None
+        value_str = f"{value:,.2f}" if value is not None else "-"
+        is_current = idx == sleeve_a.index[-1]
+        if bool(row["stopped_out"]):
+            status = f'stopped out {row["exit_date"]}'
+        elif is_current:
+            status = "holding (current)"
+        else:
+            status = "held full year"
+        sleeve_a_rows.append(SLEEVE_A_ROW.format(
+            year=int(row["year"]), ticker=row["ticker"], entry_date=row["entry_date"],
+            status=status, value=value_str, raw_value=value if value is not None else 0))
+
     as_of = equity["date"].max().date().isoformat()
     min_year = equity["date"].min().year
     max_year = equity["date"].max().year
@@ -433,14 +487,16 @@ def build():
 
     html = (PAGE_TEMPLATE
             .replace("__AS_OF__", as_of)
+            .replace("__CURRENT_HOLDINGS_HTML__", current_holdings_html)
             .replace("__ACTIVITY_HTML__", activity_html)
             .replace("__TABLE_ROWS__", "\n".join(table_rows))
+            .replace("__SLEEVE_A_ROWS__", "\n".join(sleeve_a_rows))
             .replace("__EQUITY_JSON__", json.dumps(equity_points))
             .replace("__SPY_JSON__", json.dumps(spy_points))
             .replace("__YEAR_OPTIONS__", year_options)
             .replace("__DEFAULT_START_YEAR__", str(DEFAULT_START_YEAR)))
     OUT_HTML.write_text(html, encoding="utf-8")
-    print(f"Wrote {OUT_HTML} ({len(equity_points)} equity points, {len(rebal)} rebalance rows)")
+    print(f"Wrote {OUT_HTML} ({len(equity_points)} equity points, {len(rebal)} sleeve B rows, {len(sleeve_a)} sleeve A rows)")
 
 
 if __name__ == "__main__":
