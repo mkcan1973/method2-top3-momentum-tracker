@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pandas as pd
 
+import fetch
+
 OUT_DIR = Path(__file__).parent
 EQUITY_CSV = OUT_DIR / "equity_history.csv"
 REBALANCE_CSV = OUT_DIR / "rebalance_log.csv"
@@ -426,24 +428,51 @@ def build():
 
     value_by_date = equity.set_index("date")["value"]
 
-    # --- Current holdings box ---
+    # --- Current holdings box: entry/current price + % change per ticker ---
     cur_a = sleeve_a.iloc[-1]
-    if bool(cur_a["stopped_out"]):
-        a_status = f'stopped out {cur_a["exit_date"]} @ {float(cur_a["exit_price"]):.2f} — in cash until next January'
-    else:
-        a_status = f'holding since {cur_a["entry_date"]}'
     cur_b = rebal.iloc[-1]
+    a_stopped = bool(cur_a["stopped_out"])
+    b_tickers = cur_b["holdings"].split(",")
+    b_entry_prices = dict(zip(b_tickers, (float(p) for p in cur_b["entry_prices"].split(","))))
+
+    live_tickers = b_tickers + ([] if a_stopped else [cur_a["ticker"]])
+    live_prices = {}
+    try:
+        fetched = fetch.fetch_prices(live_tickers, start=(pd.Timestamp.today() - pd.Timedelta(days=10)).strftime("%Y-%m-%d"))
+        for t, df in fetched.items():
+            if not df.empty:
+                live_prices[t] = float(df["close"].iloc[-1])
+    except Exception as e:
+        print(f"  WARNING: live price fetch for current-holdings box failed ({e}); showing entry prices only.")
+
+    def _price_line(ticker: str, entry_price: float, current_price: float | None, note: str = "") -> str:
+        if current_price is None:
+            return f'<span class="chip">{ticker}</span> entry ${entry_price:,.2f}{note}'
+        pct = (current_price / entry_price - 1) * 100
+        cls = "up" if pct >= 0 else "down"
+        return (f'<span class="chip">{ticker}</span> entry ${entry_price:,.2f} &rarr; '
+                f'current ${current_price:,.2f} <span style="color:var(--{cls});">({pct:+.1f}%)</span>{note}')
+
+    if a_stopped:
+        a_html = _price_line(cur_a["ticker"], float(cur_a["entry_price"]), float(cur_a["exit_price"]),
+                              note=f' — stopped out {cur_a["exit_date"]}, in cash until next January')
+    else:
+        a_html = _price_line(cur_a["ticker"], float(cur_a["entry_price"]), live_prices.get(cur_a["ticker"]),
+                              note=f' (since {cur_a["entry_date"]})')
+
+    b_html = "<br>".join(
+        _price_line(t, b_entry_prices[t], live_prices.get(t)) for t in b_tickers)
+
     current_holdings_html = (
-        f'<div class="activity-row"><span>Sleeve A (50%)</span>'
-        f'<span><span class="chip">{cur_a["ticker"]}</span> {a_status}</span></div>'
-        f'<div class="activity-row"><span>Sleeve B (50%)</span>'
-        f'<span>' + ' '.join(f'<span class="chip">{t}</span>' for t in cur_b["holdings"].split(",")) +
-        f' since {cur_b["entry_date"]}</span></div>'
+        f'<div class="activity-row"><span>Sleeve A (50%)</span><span>{a_html}</span></div>'
+        f'<div class="activity-row"><span>Sleeve B (50%)</span><span>{b_html}</span></div>'
     )
 
     # --- Recent activity: sleeve A's current status + sleeve B's last 2 monthly diffs ---
+    a_status = (f'stopped out {cur_a["exit_date"]} @ {float(cur_a["exit_price"]):.2f} — in cash until next January'
+                if a_stopped else f'holding since {cur_a["entry_date"]}')
     activity_rows = [ACTIVITY_ROW.format(
-        date=cur_a["entry_date"] if not bool(cur_a["stopped_out"]) else cur_a["exit_date"],
+        date=cur_a["entry_date"] if not a_stopped else cur_a["exit_date"],
         text=f'Sleeve A: {cur_a["ticker"]} {a_status}')]
     for i in range(len(rebal) - 1, max(len(rebal) - 3, 0), -1):
         new_set = set(rebal.iloc[i]["holdings"].split(","))
