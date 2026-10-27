@@ -107,7 +107,12 @@ def main():
     print(f"Wrote sleeve_a_log.csv: {len(log_a_out)} rows")
 
     # --- Sleeve B log: one row per month, basis rescaled to the 50% annual allocation ---
-    log_b = log_b[log_b["period"] >= f"{FIRST_YEAR}-01"].reset_index(drop=True)
+    # Bounded to `years` (the years the COMBINED equity curve actually covers) on both ends -
+    # top_n_momentum.run() naturally computes sleeve B through its own last completed month,
+    # which can run past sleeve A's last completed YEAR; any such extra months have no matching
+    # combined-equity value and showed up as a $0 "Value" column on the live page until this was
+    # caught (see MEMORY.md / conversation 2026-10-27).
+    log_b = log_b[(log_b["period"] >= f"{FIRST_YEAR}-01") & (log_b["period"] <= f"{years[-1]}-12")].reset_index(drop=True)
     spy_bars = all_bars["SPY"]
     entry_dates, entry_prices_col, basis_per_slot_col = [], [], []
     for _, row in log_b.iterrows():
