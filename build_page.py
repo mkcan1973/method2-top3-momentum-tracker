@@ -95,7 +95,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
   <div class="panel">
     <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px;">
       <h2 style="margin:0;">Equity curve</h2>
-      <label style="font-size:0.85rem; color:var(--ink-2);">Rebase $100 at start of
+      <label style="font-size:0.85rem; color:var(--ink-2);">Rebase $200 at start of
         <select id="start-year" style="font-family:'IBM Plex Mono',monospace; font-size:0.85rem; padding:2px 4px;">
           __YEAR_OPTIONS__
         </select>
@@ -128,7 +128,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
   <div class="panel">
     <h2>Sleeve A: yearly pick history</h2>
     <table>
-      <thead><tr><th>Year</th><th>Ticker</th><th>Entry date</th><th>Status</th><th class="num">Value ($100 base)</th></tr></thead>
+      <thead><tr><th>Year</th><th>Ticker</th><th>Entry date</th><th>Status</th><th class="num">Value ($200 base)</th></tr></thead>
       <tbody id="sleeve-a-body">__SLEEVE_A_ROWS__</tbody>
     </table>
   </div>
@@ -136,7 +136,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
   <div class="panel">
     <h2>Sleeve B: monthly top-3 holdings</h2>
     <table>
-      <thead><tr><th>Month</th><th>Rebalance date</th><th class="tickers">Holdings</th><th class="num">Value ($100 base)</th></tr></thead>
+      <thead><tr><th>Month</th><th>Rebalance date</th><th class="tickers">Holdings</th><th class="num">Value ($200 base)</th></tr></thead>
       <tbody id="holdings-body">__TABLE_ROWS__</tbody>
     </table>
   </div>
@@ -156,6 +156,10 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
 const EQUITY_RAW = __EQUITY_JSON__;
 const SPY_RAW = __SPY_JSON__;
 const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
+// Displayed as $100/sleeve x 2 sleeves = $200 total, matching how each sleeve's OWN
+// standalone backtest is independently normalized to $100 (see method2/best_combo_equity.png) -
+// not a change to the underlying data, which stays in its own internally consistent unit.
+const DISPLAY_BASE = 200;
 (function () {
   const svg = document.getElementById("chart");
   const tip = document.getElementById("chart-tooltip");
@@ -199,7 +203,7 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
   function rebaseSeries(raw, startYear) {
     const cutoff = new Date(startYear, 0, 1).getTime();
     const point = raw.find(d => d.t >= cutoff) || raw[0];
-    const factor = 100 / point.v;
+    const factor = DISPLAY_BASE / point.v;
     return raw.filter(d => d.t >= cutoff).map(d => ({ t: d.t, v: d.v * factor, date: d.date }));
   }
 
@@ -274,7 +278,7 @@ const DEFAULT_START_YEAR = __DEFAULT_START_YEAR__;
     cagrLabel.textContent = `Strategy CAGR since ${startYear}-01-01: ${(seriesCagr(data) * 100).toFixed(1)}%`;
     spyCagrLabel.textContent = `S&P 500 CAGR since ${startYear}-01-01: ${(seriesCagr(spyData) * 100).toFixed(1)}%`;
 
-    const tableFactor = 100 / (EQUITY_RAW.find(d => d.t >= minX) || EQUITY_RAW[0]).v;
+    const tableFactor = DISPLAY_BASE / (EQUITY_RAW.find(d => d.t >= minX) || EQUITY_RAW[0]).v;
     document.querySelectorAll("#holdings-body tr, #sleeve-a-body tr").forEach(tr => {
       const rowYear = parseInt(tr.dataset.year, 10);
       if (rowYear < startYear) { tr.style.display = "none"; return; }
@@ -399,6 +403,7 @@ TABLE_ROW = ('<tr data-year="{year}"><td>{period}</td><td>{entry_date}</td>'
 SLEEVE_A_ROW = ('<tr data-year="{year}"><td>{year}</td><td class="tickers">{ticker}</td><td>{entry_date}</td>'
                  '<td>{status}</td><td class="num" data-value="{raw_value}">{value}</td></tr>')
 DEFAULT_START_YEAR = 2025
+DISPLAY_BASE = 200  # keep in sync with the JS DISPLAY_BASE constant in PAGE_TEMPLATE
 
 
 def _diff_text(old: set, new: set) -> str:
@@ -463,9 +468,26 @@ def build():
     b_html = "<br>".join(
         _price_line(t, b_entry_prices[t], live_prices.get(t)) for t in b_tickers)
 
+    # Sleeve values, rescaled to the same $DISPLAY_BASE-at-DEFAULT_START_YEAR basis the chart
+    # defaults to, so this box reads consistently with what's plotted below it.
+    cutoff = pd.Timestamp(DEFAULT_START_YEAR, 1, 1)
+    base_point = equity[equity["date"] >= cutoff]["value"].iloc[0]
+    display_factor = DISPLAY_BASE / base_point
+
+    a_entry_price = float(cur_a["entry_price"])
+    a_cur_price = float(cur_a["exit_price"]) if a_stopped else live_prices.get(cur_a["ticker"], a_entry_price)
+    sleeve_a_value = float(cur_a["basis_value"]) * (a_cur_price / a_entry_price) * display_factor
+
+    basis_per_slot = float(cur_b["basis_value_per_slot"])
+    sleeve_b_value = sum(
+        basis_per_slot * (live_prices.get(t, b_entry_prices[t]) / b_entry_prices[t]) for t in b_tickers
+    ) * display_factor
+
     current_holdings_html = (
-        f'<div class="activity-row"><span>Sleeve A (50%)</span><span>{a_html}</span></div>'
-        f'<div class="activity-row"><span>Sleeve B (50%)</span><span>{b_html}</span></div>'
+        f'<div class="activity-row"><span>Sleeve A (50%) &mdash; <strong>${sleeve_a_value:,.2f}</strong></span>'
+        f'<span>{a_html}</span></div>'
+        f'<div class="activity-row"><span>Sleeve B (50%) &mdash; <strong>${sleeve_b_value:,.2f}</strong></span>'
+        f'<span>{b_html}</span></div>'
     )
 
     # --- Recent activity: sleeve A's current status + sleeve B's last 2 monthly diffs ---
