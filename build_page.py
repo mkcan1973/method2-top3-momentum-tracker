@@ -280,11 +280,11 @@ const DISPLAY_BASE = 200;
 
     // Each table rebases to $100 at ITS OWN earliest visible row, not the combined
     // portfolio's curve - sleeve A's and sleeve B's own entering amounts aren't the same
-    // number as "50% of the combined total" on any given day (that combined-curve anchor
-    // previously left the first visible row a few dollars off $100, and made the per-sleeve
-    // value shown here depend on a reference point - the combined curve - the sleeve itself
-    // may not have existed at).
-    function rescaleTable(bodyId) {
+    // number as "50% of the combined total" on any given day. The same per-table factor
+    // also rescales that sleeve's live "Current holdings" value, so both read as
+    // "$100 invested in this sleeve since the selected year, worth what today" -
+    // consistent with each other and reactive to the dropdown.
+    function rescaleTable(bodyId, liveValueId) {
       const rows = Array.from(document.querySelectorAll(`#${bodyId} tr`));
       let anchor = null;
       rows.forEach(tr => {
@@ -301,9 +301,14 @@ const DISPLAY_BASE = 200;
         const raw = parseFloat(cell.dataset.value);
         cell.textContent = (raw * factor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       });
+      if (liveValueId) {
+        const el = document.getElementById(liveValueId);
+        const raw = parseFloat(el.dataset.rawValue);
+        el.textContent = "$" + (raw * factor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
     }
-    rescaleTable("holdings-body");
-    rescaleTable("sleeve-a-body");
+    rescaleTable("holdings-body", "sleeve-b-value");
+    rescaleTable("sleeve-a-body", "sleeve-a-value");
   }
 
   function renderReturns(startYear) {
@@ -484,23 +489,25 @@ def build():
         _price_line(t, b_entry_prices[t], live_prices.get(t)) for t in b_tickers)
 
     # Each sleeve's value as "$100 invested at its own most recent entry, now" - directly
-    # matching the % changes shown next to it (both come from the same entry/current prices).
-    # Deliberately NOT tied to the chart's rebase-year dropdown: a dropdown year can predate a
-    # sleeve's own entry (e.g. sleeve A only exists from 2026, while the chart can show 2013+),
-    # and borrowing an unrelated reference point produced a dollar figure inconsistent with the
-    # displayed % return.
+    # Raw (same unit as that sleeve's table rows, i.e. its own compounding basis - NOT the
+    # combined portfolio's curve). JS rescales this by the SAME per-table factor used for the
+    # table above it, so both read as "$100 invested in this sleeve since the selected year,
+    # worth what today" and move together when the dropdown changes.
     a_entry_price = float(cur_a["entry_price"])
     a_cur_price = float(cur_a["exit_price"]) if a_stopped else live_prices.get(cur_a["ticker"], a_entry_price)
-    sleeve_a_value = 100.0 * (a_cur_price / a_entry_price)
+    sleeve_a_value_raw = float(cur_a["basis_value"]) * (a_cur_price / a_entry_price)
 
-    sleeve_b_value = sum(
-        (100.0 / len(b_tickers)) * (live_prices.get(t, b_entry_prices[t]) / b_entry_prices[t]) for t in b_tickers
+    basis_per_slot = float(cur_b["basis_value_per_slot"])
+    sleeve_b_value_raw = sum(
+        basis_per_slot * (live_prices.get(t, b_entry_prices[t]) / b_entry_prices[t]) for t in b_tickers
     )
 
     current_holdings_html = (
-        f'<div class="activity-row"><span>Sleeve A (50%): <strong>${sleeve_a_value:,.2f}</strong></span>'
+        f'<div class="activity-row"><span>Sleeve A (50%): <strong id="sleeve-a-value" '
+        f'data-raw-value="{sleeve_a_value_raw}">${sleeve_a_value_raw:,.2f}</strong></span>'
         f'<span>{a_html}</span></div>'
-        f'<div class="activity-row"><span>Sleeve B (50%): <strong>${sleeve_b_value:,.2f}</strong></span>'
+        f'<div class="activity-row"><span>Sleeve B (50%): <strong id="sleeve-b-value" '
+        f'data-raw-value="{sleeve_b_value_raw}">${sleeve_b_value_raw:,.2f}</strong></span>'
         f'<span>{b_html}</span></div>'
     )
 
