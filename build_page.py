@@ -437,8 +437,6 @@ def build():
     spy_points = [{"t": int(row.date.timestamp() * 1000), "v": round(float(row.value), 2),
                     "date": row.date.date().isoformat()} for row in spy.itertuples()]
 
-    value_by_date = equity.set_index("date")["value"]
-
     # --- Current holdings box: entry/current price + % change per ticker ---
     cur_a = sleeve_a.iloc[-1]
     cur_b = rebal.iloc[-1]
@@ -508,21 +506,23 @@ def build():
         activity_rows.append(ACTIVITY_ROW.format(date=rebal.iloc[i]["entry_date"], text=f"Sleeve B: {text}"))
     activity_html = "\n".join(activity_rows)
 
+    # Each table shows that SLEEVE's own value entering the period (basis_value /
+    # basis_value_per_slot x n_tickers), not the combined portfolio's value - those are
+    # different quantities and showing the combined figure under a "Sleeve B" header was
+    # misleading once the two-sleeve blend replaced the old single-strategy tracker.
     table_rows = []
     for _, row in rebal.iloc[::-1].iterrows():
-        entry_ts = pd.Timestamp(row["entry_date"])
-        value = value_by_date.loc[entry_ts] if entry_ts in value_by_date.index else None
-        value_str = f"{value:,.2f}" if value is not None else "-"
+        n = len(row["holdings"].split(","))
+        value = float(row["basis_value_per_slot"]) * n
         table_rows.append(TABLE_ROW.format(
             year=int(row["period"][:4]), period=row["period"], entry_date=row["entry_date"],
-            holdings=row["holdings"].replace(",", ", "), value=value_str,
-            raw_value=value if value is not None else 0))
+            holdings=row["holdings"].replace(",", ", "), value=f"{value:,.2f}",
+            raw_value=value))
 
     sleeve_a_rows = []
     for idx, row in sleeve_a.iloc[::-1].iterrows():
-        entry_ts = pd.Timestamp(row["entry_date"])
-        value = value_by_date.loc[entry_ts] if entry_ts in value_by_date.index else None
-        value_str = f"{value:,.2f}" if value is not None else "-"
+        value = float(row["basis_value"])
+        value_str = f"{value:,.2f}"
         is_current = idx == sleeve_a.index[-1]
         if bool(row["stopped_out"]):
             status = f'stopped out {row["exit_date"]}'
