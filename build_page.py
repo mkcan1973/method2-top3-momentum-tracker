@@ -128,7 +128,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
   <div class="panel">
     <h2>Sleeve A: yearly pick history</h2>
     <table>
-      <thead><tr><th>Year</th><th>Ticker</th><th>Entry date</th><th>Status</th><th class="num">Value ($200 base)</th></tr></thead>
+      <thead><tr><th>Year</th><th>Ticker</th><th>Entry date</th><th>Status</th><th class="num">Value ($100 base)</th></tr></thead>
       <tbody id="sleeve-a-body">__SLEEVE_A_ROWS__</tbody>
     </table>
   </div>
@@ -136,7 +136,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
   <div class="panel">
     <h2>Sleeve B: monthly top-3 holdings</h2>
     <table>
-      <thead><tr><th>Month</th><th>Rebalance date</th><th class="tickers">Holdings</th><th class="num">Value ($200 base)</th></tr></thead>
+      <thead><tr><th>Month</th><th>Rebalance date</th><th class="tickers">Holdings</th><th class="num">Value ($100 base)</th></tr></thead>
       <tbody id="holdings-body">__TABLE_ROWS__</tbody>
     </table>
   </div>
@@ -278,21 +278,32 @@ const DISPLAY_BASE = 200;
     cagrLabel.textContent = `Strategy CAGR since ${startYear}-01-01: ${(seriesCagr(data) * 100).toFixed(1)}%`;
     spyCagrLabel.textContent = `S&P 500 CAGR since ${startYear}-01-01: ${(seriesCagr(spyData) * 100).toFixed(1)}%`;
 
-    const tableFactor = DISPLAY_BASE / (EQUITY_RAW.find(d => d.t >= minX) || EQUITY_RAW[0]).v;
-    document.querySelectorAll("#holdings-body tr, #sleeve-a-body tr").forEach(tr => {
-      const rowYear = parseInt(tr.dataset.year, 10);
-      if (rowYear < startYear) { tr.style.display = "none"; return; }
-      tr.style.display = "";
-      const cell = tr.querySelector("td.num");
-      const raw = parseFloat(cell.dataset.value);
-      cell.textContent = (raw * tableFactor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    });
-
-    ["sleeve-a-value", "sleeve-b-value"].forEach(id => {
-      const el = document.getElementById(id);
-      const raw = parseFloat(el.dataset.rawValue);
-      el.textContent = "$" + (raw * tableFactor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    });
+    // Each table rebases to $100 at ITS OWN earliest visible row, not the combined
+    // portfolio's curve - sleeve A's and sleeve B's own entering amounts aren't the same
+    // number as "50% of the combined total" on any given day (that combined-curve anchor
+    // previously left the first visible row a few dollars off $100, and made the per-sleeve
+    // value shown here depend on a reference point - the combined curve - the sleeve itself
+    // may not have existed at).
+    function rescaleTable(bodyId) {
+      const rows = Array.from(document.querySelectorAll(`#${bodyId} tr`));
+      let anchor = null;
+      rows.forEach(tr => {
+        const rowYear = parseInt(tr.dataset.year, 10);
+        if (rowYear < startYear) { tr.style.display = "none"; return; }
+        tr.style.display = "";
+        anchor = parseFloat(tr.querySelector("td.num").dataset.value);
+      });
+      if (anchor === null) return;
+      const factor = 100 / anchor;
+      rows.forEach(tr => {
+        if (tr.style.display === "none") return;
+        const cell = tr.querySelector("td.num");
+        const raw = parseFloat(cell.dataset.value);
+        cell.textContent = (raw * factor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      });
+    }
+    rescaleTable("holdings-body");
+    rescaleTable("sleeve-a-body");
   }
 
   function renderReturns(startYear) {
@@ -472,24 +483,24 @@ def build():
     b_html = "<br>".join(
         _price_line(t, b_entry_prices[t], live_prices.get(t)) for t in b_tickers)
 
-    # Sleeve values in the SAME raw unit as EQUITY_RAW (not yet rebased to any display year) -
-    # JS rescales these to match the chart's selected start-year on load and on dropdown change,
-    # same as it already does for the holdings tables.
+    # Each sleeve's value as "$100 invested at its own most recent entry, now" - directly
+    # matching the % changes shown next to it (both come from the same entry/current prices).
+    # Deliberately NOT tied to the chart's rebase-year dropdown: a dropdown year can predate a
+    # sleeve's own entry (e.g. sleeve A only exists from 2026, while the chart can show 2013+),
+    # and borrowing an unrelated reference point produced a dollar figure inconsistent with the
+    # displayed % return.
     a_entry_price = float(cur_a["entry_price"])
     a_cur_price = float(cur_a["exit_price"]) if a_stopped else live_prices.get(cur_a["ticker"], a_entry_price)
-    sleeve_a_value_raw = float(cur_a["basis_value"]) * (a_cur_price / a_entry_price)
+    sleeve_a_value = 100.0 * (a_cur_price / a_entry_price)
 
-    basis_per_slot = float(cur_b["basis_value_per_slot"])
-    sleeve_b_value_raw = sum(
-        basis_per_slot * (live_prices.get(t, b_entry_prices[t]) / b_entry_prices[t]) for t in b_tickers
+    sleeve_b_value = sum(
+        (100.0 / len(b_tickers)) * (live_prices.get(t, b_entry_prices[t]) / b_entry_prices[t]) for t in b_tickers
     )
 
     current_holdings_html = (
-        f'<div class="activity-row"><span>Sleeve A (50%): <strong id="sleeve-a-value" '
-        f'data-raw-value="{sleeve_a_value_raw}">${sleeve_a_value_raw:,.2f}</strong></span>'
+        f'<div class="activity-row"><span>Sleeve A (50%): <strong>${sleeve_a_value:,.2f}</strong></span>'
         f'<span>{a_html}</span></div>'
-        f'<div class="activity-row"><span>Sleeve B (50%): <strong id="sleeve-b-value" '
-        f'data-raw-value="{sleeve_b_value_raw}">${sleeve_b_value_raw:,.2f}</strong></span>'
+        f'<div class="activity-row"><span>Sleeve B (50%): <strong>${sleeve_b_value:,.2f}</strong></span>'
         f'<span>{b_html}</span></div>'
     )
 

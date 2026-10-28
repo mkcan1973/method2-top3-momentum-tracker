@@ -64,7 +64,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
 
   <div class="panel">
     <h2>Current holdings</h2>
-    <div class="activity-row"><span>Sleeve A (50%): <strong id="sleeve-a-value" data-raw-value="25459.910394291455">$25,459.91</strong></span><span><span class="chip">SNDK</span> entry $244.35 &rarr; current $1,304.84 <span style="color:var(--up);">(+434.0%)</span> (since 2026-01-02)</span></div><div class="activity-row"><span>Sleeve B (50%): <strong id="sleeve-b-value" data-raw-value="11523.88295728855">$11,523.88</strong></span><span><span class="chip">AMD</span> entry $599.93 &rarr; current $560.26 <span style="color:var(--down);">(-6.6%)</span><br><span class="chip">MRNA</span> entry $224.50 &rarr; current $207.97 <span style="color:var(--down);">(-7.4%)</span><br><span class="chip">MU</span> entry $1,002.45 &rarr; current $928.76 <span style="color:var(--down);">(-7.4%)</span></span></div>
+    <div class="activity-row"><span>Sleeve A (50%): <strong>$534.00</strong></span><span><span class="chip">SNDK</span> entry $244.35 &rarr; current $1,304.84 <span style="color:var(--up);">(+434.0%)</span> (since 2026-01-02)</span></div><div class="activity-row"><span>Sleeve B (50%): <strong>$92.89</strong></span><span><span class="chip">AMD</span> entry $599.93 &rarr; current $560.26 <span style="color:var(--down);">(-6.6%)</span><br><span class="chip">MRNA</span> entry $224.50 &rarr; current $207.97 <span style="color:var(--down);">(-7.4%)</span><br><span class="chip">MU</span> entry $1,002.45 &rarr; current $928.76 <span style="color:var(--down);">(-7.4%)</span></span></div>
   </div>
 
   <div class="panel">
@@ -123,7 +123,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
   <div class="panel">
     <h2>Sleeve A: yearly pick history</h2>
     <table>
-      <thead><tr><th>Year</th><th>Ticker</th><th>Entry date</th><th>Status</th><th class="num">Value ($200 base)</th></tr></thead>
+      <thead><tr><th>Year</th><th>Ticker</th><th>Entry date</th><th>Status</th><th class="num">Value ($100 base)</th></tr></thead>
       <tbody id="sleeve-a-body"><tr data-year="2026"><td>2026</td><td class="tickers">SNDK</td><td>2026-01-02</td><td>holding (current)</td><td class="num" data-value="4767.733533">4,767.73</td></tr>
 <tr data-year="2025"><td>2025</td><td class="tickers">PLTR</td><td>2025-01-02</td><td>held full year</td><td class="num" data-value="2474.920945">2,474.92</td></tr>
 <tr data-year="2024"><td>2024</td><td class="tickers">NVDA</td><td>2024-01-02</td><td>held full year</td><td class="num" data-value="1170.09791">1,170.10</td></tr>
@@ -144,7 +144,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
   <div class="panel">
     <h2>Sleeve B: monthly top-3 holdings</h2>
     <table>
-      <thead><tr><th>Month</th><th>Rebalance date</th><th class="tickers">Holdings</th><th class="num">Value ($200 base)</th></tr></thead>
+      <thead><tr><th>Month</th><th>Rebalance date</th><th class="tickers">Holdings</th><th class="num">Value ($100 base)</th></tr></thead>
       <tbody id="holdings-body"><tr data-year="2026"><td>2026-10</td><td>2026-10-12</td><td class="tickers">AMD, MRNA, MU</td><td class="num" data-value="12405.787836000001">12,405.79</td></tr>
 <tr data-year="2026"><td>2026-09</td><td>2026-09-01</td><td class="tickers">DELL, MRNA, MRVL</td><td class="num" data-value="8832.162801">8,832.16</td></tr>
 <tr data-year="2026"><td>2026-08</td><td>2026-08-03</td><td class="tickers">DELL, DVA, MRVL</td><td class="num" data-value="8964.646428">8,964.65</td></tr>
@@ -451,21 +451,32 @@ const DISPLAY_BASE = 200;
     cagrLabel.textContent = `Strategy CAGR since ${startYear}-01-01: ${(seriesCagr(data) * 100).toFixed(1)}%`;
     spyCagrLabel.textContent = `S&P 500 CAGR since ${startYear}-01-01: ${(seriesCagr(spyData) * 100).toFixed(1)}%`;
 
-    const tableFactor = DISPLAY_BASE / (EQUITY_RAW.find(d => d.t >= minX) || EQUITY_RAW[0]).v;
-    document.querySelectorAll("#holdings-body tr, #sleeve-a-body tr").forEach(tr => {
-      const rowYear = parseInt(tr.dataset.year, 10);
-      if (rowYear < startYear) { tr.style.display = "none"; return; }
-      tr.style.display = "";
-      const cell = tr.querySelector("td.num");
-      const raw = parseFloat(cell.dataset.value);
-      cell.textContent = (raw * tableFactor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    });
-
-    ["sleeve-a-value", "sleeve-b-value"].forEach(id => {
-      const el = document.getElementById(id);
-      const raw = parseFloat(el.dataset.rawValue);
-      el.textContent = "$" + (raw * tableFactor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    });
+    // Each table rebases to $100 at ITS OWN earliest visible row, not the combined
+    // portfolio's curve - sleeve A's and sleeve B's own entering amounts aren't the same
+    // number as "50% of the combined total" on any given day (that combined-curve anchor
+    // previously left the first visible row a few dollars off $100, and made the per-sleeve
+    // value shown here depend on a reference point - the combined curve - the sleeve itself
+    // may not have existed at).
+    function rescaleTable(bodyId) {
+      const rows = Array.from(document.querySelectorAll(`#${bodyId} tr`));
+      let anchor = null;
+      rows.forEach(tr => {
+        const rowYear = parseInt(tr.dataset.year, 10);
+        if (rowYear < startYear) { tr.style.display = "none"; return; }
+        tr.style.display = "";
+        anchor = parseFloat(tr.querySelector("td.num").dataset.value);
+      });
+      if (anchor === null) return;
+      const factor = 100 / anchor;
+      rows.forEach(tr => {
+        if (tr.style.display === "none") return;
+        const cell = tr.querySelector("td.num");
+        const raw = parseFloat(cell.dataset.value);
+        cell.textContent = (raw * factor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      });
+    }
+    rescaleTable("holdings-body");
+    rescaleTable("sleeve-a-body");
   }
 
   function renderReturns(startYear) {
