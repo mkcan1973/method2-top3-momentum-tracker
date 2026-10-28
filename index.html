@@ -64,7 +64,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
 
   <div class="panel">
     <h2>Current holdings</h2>
-    <div class="activity-row"><span>Sleeve A (50%) &mdash; <strong>$1,028.72</strong></span><span><span class="chip">SNDK</span> entry $244.35 &rarr; current $1,304.84 <span style="color:var(--up);">(+434.0%)</span> (since 2026-01-02)</span></div><div class="activity-row"><span>Sleeve B (50%) &mdash; <strong>$465.63</strong></span><span><span class="chip">AMD</span> entry $599.93 &rarr; current $560.26 <span style="color:var(--down);">(-6.6%)</span><br><span class="chip">MRNA</span> entry $224.50 &rarr; current $207.97 <span style="color:var(--down);">(-7.4%)</span><br><span class="chip">MU</span> entry $1,002.45 &rarr; current $928.76 <span style="color:var(--down);">(-7.4%)</span></span></div>
+    <div class="activity-row"><span>Sleeve A (50%): <strong id="sleeve-a-value" data-raw-value="25459.910394291455">$25,459.91</strong></span><span><span class="chip">SNDK</span> entry $244.35 &rarr; current $1,304.84 <span style="color:var(--up);">(+434.0%)</span> (since 2026-01-02)</span></div><div class="activity-row"><span>Sleeve B (50%): <strong id="sleeve-b-value" data-raw-value="11523.88295728855">$11,523.88</strong></span><span><span class="chip">AMD</span> entry $599.93 &rarr; current $560.26 <span style="color:var(--down);">(-6.6%)</span><br><span class="chip">MRNA</span> entry $224.50 &rarr; current $207.97 <span style="color:var(--down);">(-7.4%)</span><br><span class="chip">MU</span> entry $1,002.45 &rarr; current $928.76 <span style="color:var(--down);">(-7.4%)</span></span></div>
   </div>
 
   <div class="panel">
@@ -459,6 +459,12 @@ const DISPLAY_BASE = 200;
       const cell = tr.querySelector("td.num");
       const raw = parseFloat(cell.dataset.value);
       cell.textContent = (raw * tableFactor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    });
+
+    ["sleeve-a-value", "sleeve-b-value"].forEach(id => {
+      const el = document.getElementById(id);
+      const raw = parseFloat(el.dataset.rawValue);
+      el.textContent = "$" + (raw * tableFactor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     });
   }
 

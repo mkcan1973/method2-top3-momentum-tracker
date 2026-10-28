@@ -287,6 +287,12 @@ const DISPLAY_BASE = 200;
       const raw = parseFloat(cell.dataset.value);
       cell.textContent = (raw * tableFactor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     });
+
+    ["sleeve-a-value", "sleeve-b-value"].forEach(id => {
+      const el = document.getElementById(id);
+      const raw = parseFloat(el.dataset.rawValue);
+      el.textContent = "$" + (raw * tableFactor).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    });
   }
 
   function renderReturns(startYear) {
@@ -468,25 +474,24 @@ def build():
     b_html = "<br>".join(
         _price_line(t, b_entry_prices[t], live_prices.get(t)) for t in b_tickers)
 
-    # Sleeve values, rescaled to the same $DISPLAY_BASE-at-DEFAULT_START_YEAR basis the chart
-    # defaults to, so this box reads consistently with what's plotted below it.
-    cutoff = pd.Timestamp(DEFAULT_START_YEAR, 1, 1)
-    base_point = equity[equity["date"] >= cutoff]["value"].iloc[0]
-    display_factor = DISPLAY_BASE / base_point
-
+    # Sleeve values in the SAME raw unit as EQUITY_RAW (not yet rebased to any display year) -
+    # JS rescales these to match the chart's selected start-year on load and on dropdown change,
+    # same as it already does for the holdings tables.
     a_entry_price = float(cur_a["entry_price"])
     a_cur_price = float(cur_a["exit_price"]) if a_stopped else live_prices.get(cur_a["ticker"], a_entry_price)
-    sleeve_a_value = float(cur_a["basis_value"]) * (a_cur_price / a_entry_price) * display_factor
+    sleeve_a_value_raw = float(cur_a["basis_value"]) * (a_cur_price / a_entry_price)
 
     basis_per_slot = float(cur_b["basis_value_per_slot"])
-    sleeve_b_value = sum(
+    sleeve_b_value_raw = sum(
         basis_per_slot * (live_prices.get(t, b_entry_prices[t]) / b_entry_prices[t]) for t in b_tickers
-    ) * display_factor
+    )
 
     current_holdings_html = (
-        f'<div class="activity-row"><span>Sleeve A (50%) &mdash; <strong>${sleeve_a_value:,.2f}</strong></span>'
+        f'<div class="activity-row"><span>Sleeve A (50%): <strong id="sleeve-a-value" '
+        f'data-raw-value="{sleeve_a_value_raw}">${sleeve_a_value_raw:,.2f}</strong></span>'
         f'<span>{a_html}</span></div>'
-        f'<div class="activity-row"><span>Sleeve B (50%) &mdash; <strong>${sleeve_b_value:,.2f}</strong></span>'
+        f'<div class="activity-row"><span>Sleeve B (50%): <strong id="sleeve-b-value" '
+        f'data-raw-value="{sleeve_b_value_raw}">${sleeve_b_value_raw:,.2f}</strong></span>'
         f'<span>{b_html}</span></div>'
     )
 
