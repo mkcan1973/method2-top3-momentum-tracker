@@ -5,6 +5,7 @@ no-dependency approach method1-tracker's web_summary.py uses.
 """
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -80,7 +81,7 @@ footer { color: var(--ink-2); font-size: 0.78rem; margin-top: 24px; line-height:
 <body>
 <div class="wrap">
   <h1>Blended Momentum Tracker</h1>
-  <p class="sub">As of __AS_OF__ &middot; 50% sleeve A (one stock, picked every January by prior-year return, 35% stop-loss) + 50% sleeve B (top-3, 6-month momentum, rebalanced monthly) &middot; rebalanced to 50/50 every January</p>
+  <p class="sub">As of __AS_OF__ &middot; last run __LAST_RUN__ &middot; 50% sleeve A (one stock, picked every January by prior-year return, 35% stop-loss) + 50% sleeve B (top-3, 6-month momentum, rebalanced monthly) &middot; rebalanced to 50/50 every January</p>
 
   <div class="panel">
     <h2>Current holdings</h2>
@@ -561,6 +562,7 @@ def build():
 
     html = (PAGE_TEMPLATE
             .replace("__AS_OF__", as_of)
+            .replace("__LAST_RUN__", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
             .replace("__CURRENT_HOLDINGS_HTML__", current_holdings_html)
             .replace("__ACTIVITY_HTML__", activity_html)
             .replace("__TABLE_ROWS__", "\n".join(table_rows))
